@@ -61,7 +61,6 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 REDIS_INDEX_NAME = "embeddings_idx"
 EMBEDDING_DIMENSION = 768  # Example: 768 for many BERT-based models
 
-
 # Directory paths
 DOCUMENTS_DIR = 'documents'
 
@@ -250,9 +249,8 @@ def add_embeddings_to_redis(embeddings: List[np.ndarray], chunks: List[str], sou
     
     logger.info(f"Added {len(embeddings)} embeddings to Redis successfully.")
 
-
 def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
-"""Retrieve similar text chunks from Redis using vector similarity search"""
+    """Retrieve similar text chunks from Redis using vector similarity search"""
     logger.debug(f"Retrieving similar chunks for prompt: {prompt}")
     
     try:
@@ -398,3 +396,328 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         "message": "Files processed and embedded successfully.",
         "embedded_texts_count": len(all_chunks)
     }
+
+@app.post("/sitemap")
+async def sitemap(
+    request: URLRequest, 
+    depth: int = Query(1)
+) -> Dict[str, Any]:
+    if depth < 1 or depth > 5:
+        raise HTTPException(status_code=400, detail="Depth must be between 1 and 5")
+    
+    # Initialize tracking variables
+    visited_urls = set()
+    url_queue = deque([(str(request.url), 0)])
+    processed_urls = 0
+    embedded_count = 0
+
+    # Parse the base domain to ensure we stay within the same site
+    base_url = str(request.url)
+    base_domain = urlparse(base_url).netloc
+    base_scheme = urlparse(base_url).scheme
+
+    while url_queue:
+        current_url, current_depth = url_queue.popleft()
+
+        # Stop if we've exceeded the specified depth
+        if current_depth > depth:
+            break
+
+        # Skip if already visited
+        if current_url in visited_urls:
+            continue
+
+        visited_urls.add(current_url)
+        logger.debug(f"Processing URL: {current_url} at depth: {current_depth}")
+
+        try:
+            # Fetch the webpage
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(current_url, timeout=10, headers=headers)
+            response.raise_for_status()
+
+            # Parse the HTML
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            # Extract text
+            extracted_text = soup.get_text(separator=" ")
+            cleaned_text = " ".join(extracted_text.split())
+
+            # Skip if no meaningful text
+            if not cleaned_text or len(cleaned_text) < 100:
+                logger.warning(f"Insufficient text extracted from URL: {current_url}")
+                continue
+
+            # Chunk and embed the text
+            chunks = chunk_text(cleaned_text)
+            if chunks:
+                try:
+                    embeddings = embed_text_chunks(chunks)
+                    add_embeddings_to_redis(embeddings, chunks, current_url)
+                    processed_urls += 1
+                    embedded_count += len(chunks)
+                    logger.info(f"Successfully embedded URL: {current_url}")
+                except Exception as embed_error:
+                    logger.error(f"Error embedding {current_url}: {embed_error}")
+                    continue        
+
+            # Find and queue new URLs
+            for link in soup.find_all('a', href=True):
+                href = link.get('href', '')
+                
+                # Normalize the URL
+                try:
+                    full_url = urljoin(current_url, href)
+                    parsed_url = urlparse(full_url)
+                except Exception as url_error:
+                    logger.warning(f"Error parsing URL {href}: {url_error}")
+                    continue
+
+                # URL filtering conditions
+                conditions = [
+                    parsed_url.netloc == base_domain,  # Same domain
+                    parsed_url.scheme in ['http', 'https'],  # Valid scheme
+                    not parsed_url.fragment,  # No fragments
+                    full_url not in visited_urls,  # Not visited before
+                    not any(ext in full_url for ext in ['.pdf', '.jpg', '.png', '.gif']),  # Exclude media files
+                ]
+
+                # Additional path filtering to avoid going too deep into site structure
+                path_segments = parsed_url.path.strip('/').split('/')
+                
+                # Limit path depth and avoid certain patterns
+                if (all(conditions) and 
+                    len(path_segments) <= 4 and  # Limit path depth
+                    not any(seg in ['tag', 'category', 'archive'] for seg in path_segments)):
+                    
+                    # Queue the URL if it meets all conditions
+                    url_queue.append((full_url, current_depth + 1))
+                    logger.debug(f"Queued URL: {full_url}")
+
+        except requests.RequestException as req_err:
+            logger.error(f"Request error for {current_url}: {req_err}")
+            continue
+        except Exception as e:
+            logger.error(f"Unexpected error processing {current_url}: {e}")
+            continue
+
+    return {
+        "message": "Sitemap processed and embedded successfully.",
+        "processed_urls_count": processed_urls,
+        "total_visited_urls": len(visited_urls),
+        "embedded_chunks_count": embedded_count
+    }
+
+# Normalize URLs
+def normalize_url(url: str) -> str:
+    """
+    Normalize URLs to remove tracking parameters and standardize format
+    """
+    # Remove common tracking parameters
+    url = re.sub(r'(\?|&)(utm_[^&]+|ref=[^&]+)', '', url)
+    
+    # Remove trailing slash
+    url = url.rstrip('/')
+    
+    return url
+
+@app.post("/clear_embedded_urls")
+async def clear_embedded_urls():
+    """
+    Clear the list of embedded URLs.
+    Useful for starting a fresh crawl or resetting the system.
+    """
+    global embedded_urls
+    embedded_urls.clear()
+    return {"message": "Embedded URLs tracking has been reset"}
+
+@app.get("/embedded_urls")
+async def get_embedded_urls():
+    """
+    Retrieve the list of currently embedded URLs.
+    """
+    return {
+        "embedded_urls": list(embedded_urls),
+        "total_embedded_urls": len(embedded_urls)
+    }
+
+@app.post("/upload/urls")
+async def upload_urls(request: URLRequest) -> Dict[str, Any]:
+    logger.info(f"Received URL upload request: {request.url}")
+    try:
+        # Fetch webpage content
+        logger.debug(f"Fetching content from URL: {request.url}")
+        response = requests.get(request.url, timeout=10)
+        response.raise_for_status()
+
+        # Extract clean text from HTML
+        logger.debug("Extracting text from HTML content.")
+        soup = BeautifulSoup(response.text, "html.parser")
+        for script in soup(["script", "style"]):
+            script.extract()  # Remove script and style tags
+        extracted_text = soup.get_text(separator=" ")
+
+        # Remove extra spaces and newlines
+        cleaned_text = " ".join(extracted_text.split())
+        logger.debug(f"Cleaned text length: {len(cleaned_text)} characters.")
+
+        # Chunk and embed the cleaned text
+        chunks = chunk_text(cleaned_text)
+        if not chunks:
+            logger.error("No text extracted from the URL content.")
+            raise ValueError("No text extracted from the URL content.")
+
+        embeddings = embed_text_chunks(chunks)
+        add_embeddings_to_redis(embeddings, chunks, str(request.url))
+
+        logger.info(f"Processed and embedded content from URL: {request.url}")
+
+        return {
+            "message": "URL content processed and embedded successfully.",
+            "embedded_texts_count": len(chunks)
+        }
+
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Request error while fetching URL {request.url}: {req_err}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch the URL: {req_err}")
+
+    except Exception as e:
+        logger.error(f"Error processing URL {request.url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    logger.info("Received chat request.")
+    try:
+        # Retrieve similar chunks from Redis vector search
+        similar_chunks = retrieve_similar_chunks(request.message, top_k=5)
+
+        if not similar_chunks:
+            logger.info("No similar chunks found for the given question.")
+            return ChatResponse(response="No relevant information found. Please upload more documents or URLs.")
+
+        # Combine the retrieved chunks as context
+        context = "\n".join(similar_chunks)
+        logger.debug(f"Combined Context for LLM:\n{context}")
+
+        # Generate a response using the LLM with the context
+        response_text = generate_llm_response(request.message, context)
+
+        if not response_text:
+            logger.warning("LLM did not generate a response.")
+            response_text = "I couldn't generate a response based on the provided information."
+
+        logger.info("Generated response from LLM.")
+        return ChatResponse(response=response_text)
+
+    except HTTPException as http_exc:
+        # Re-raise HTTPExceptions to be handled by FastAPI
+        logger.error(f"HTTPException in /chat endpoint: {http_exc.detail}")
+        raise http_exc
+
+    except Exception as e:
+        logger.error(f"Error in /chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+
+@app.get("/")
+def read_root():
+    logger.info("Root endpoint accessed.")
+    return {"message": "AI Bot Backend with Redis Vector Database and Groq Cloud is running."}
+
+# Ollama Process Management
+ollama_process = None
+
+def start_ollama():
+    global ollama_process
+    if ollama_process is None:
+        logger.info("Starting Ollama 'nomic-embed-text' model...")
+        try:
+            # Start the Ollama model as a subprocess
+            ollama_process = subprocess.Popen(
+                ["ollama", "run", "nomic-embed-text"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            logger.info("Ollama 'nomic-embed-text' model started successfully.")
+            
+            # Optionally, wait for a short period to ensure the model starts properly
+            time.sleep(5)
+        except FileNotFoundError:
+            logger.critical("Ollama is not installed or not found in PATH.")
+            raise RuntimeError("Ollama is not installed or not found in PATH.")
+        except Exception as e:
+            logger.error(f"Failed to start Ollama: {e}")
+            raise RuntimeError(f"Failed to start Ollama: {e}")
+
+def stop_ollama():
+    global ollama_process
+    if ollama_process is not None:
+        logger.info("Stopping Ollama 'nomic-embed-text' model...")
+        try:
+            # Terminate the subprocess gracefully
+            if sys.platform.startswith('win'):
+                ollama_process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                ollama_process.terminate()
+            
+            # Wait for the process to terminate
+            ollama_process.wait(timeout=10)
+            logger.info("Ollama 'nomic-embed-text' model stopped successfully.")
+        except Exception as e:
+            logger.error(f"Error stopping Ollama: {e}")
+            ollama_process.kill()
+        finally:
+            ollama_process = None
+
+# Redis management functions
+def flush_redis_data():
+    """Clear all data in Redis"""
+    try:
+        redis_client.flushall()
+        logger.info("Redis data flushed successfully")
+        return {"message": "All Redis data has been cleared"}
+    except Exception as e:
+        logger.error(f"Error flushing Redis data: {e}")
+        raise HTTPException(status_code=500, detail=f"Redis error: {e}")
+
+@app.post("/flush_redis")
+async def flush_redis():
+    """Endpoint to clear all Redis data"""
+    return flush_redis_data()
+
+# Load Redis and initialize vector index at startup
+@app.on_event("startup")
+def startup_event():
+    logger.info("Application startup initiated.")
+    # Start Ollama before initializing Redis
+    try:
+        start_ollama()
+    except Exception as e:
+        logger.critical(f"Failed to start Ollama during startup: {e}")
+        sys.exit(1)  # Exit the application if Ollama fails to start
+    
+    # Initialize Redis with vector search capability
+    try:
+        initialize_redis_vector_index()
+    except Exception as e:
+        logger.critical(f"Failed to initialize Redis: {e}")
+        sys.exit(1)
+        
+    logger.info("Application startup complete. Redis vector index initialized.")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    logger.info("Application shutdown initiated.")
+    stop_ollama()
+    # Close Redis connection if it exists
+    global redis_client
+    if redis_client:
+        redis_client.close()
+        logger.info("Redis connection closed.")
+    logger.info("Application shutdown complete.")
