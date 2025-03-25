@@ -4,6 +4,7 @@ import logging
 from ..schemas.file import FileResponse, UploadResponse
 from ..services.file_service import FileService
 from ..dependencies import get_file_service
+import uuid
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
@@ -31,15 +32,29 @@ async def upload_files(
         # Process files
         results = await file_service.process_files(files, save_to_drive)
         
-        # Log results
+        # Count successes and errors
         success_count = sum(1 for r in results if r["status"] == "success")
         error_count = len(results) - success_count
         
         logger.info(f"File upload complete: {success_count} successful, {error_count} failed")
         
+        # Ensure each result has all required fields
+        processed_files = []
+        for result in results:
+            processed_file = {
+                "filename": result.get("filename", "unknown"),
+                "doc_id": result.get("doc_id", str(uuid.uuid4())),
+                "chunks_count": result.get("chunks_count", 0),
+                "status": result.get("status", "error"),
+                "error": result.get("error")
+            }
+            processed_files.append(processed_file)
+        
         return UploadResponse(
-            message="Files processed successfully",
-            processed_files=results
+            message="Files processed successfully" if error_count == 0 else f"Files processed with {error_count} errors",
+            processed_files=processed_files,
+            success_count=success_count,
+            error_count=error_count
         )
         
     except Exception as e:

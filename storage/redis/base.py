@@ -30,18 +30,36 @@ class BaseRedisStorage(StorageInterface):
         """Get Redis key for document chunks list."""
         return f"{self.prefix}:doc:{doc_id}:chunks"
     
-    async def store_chunk(self, chunk_id: str, chunk_data: Dict[str, Any]) -> bool:
-        """Store a single chunk of data."""
+    async def store_chunk(self, chunk_id: str, chunk: str, metadata: Dict[str, Any] = None, ttl: int = None) -> None:
+        """Store a chunk in Redis.
+        
+        Args:
+            chunk_id: Unique chunk ID
+            chunk: Text content of the chunk
+            metadata: Optional metadata for the chunk
+            ttl: Optional time-to-live in seconds
+        """
         try:
+            chunk_data = {
+                "content": chunk,
+                "metadata": metadata or {}
+            }
+            
             key = self._get_chunk_key(chunk_id)
-            # Convert embedding to string for storage
-            if "embedding" in chunk_data:
-                chunk_data["embedding"] = chunk_data["embedding"].tolist()
             self.client.set(key, json.dumps(chunk_data))
-            return True
+            
+            if ttl:
+                self.client.expire(key, ttl)
+            
+            # Add to document's chunk list if doc_id is in metadata
+            if metadata and "doc_id" in metadata:
+                self.client.sadd(self._get_doc_chunks_key(metadata["doc_id"]), chunk_id)
+            
+            logger.debug(f"Stored chunk {chunk_id} in Redis")
+            
         except Exception as e:
-            logger.error(f"Error storing chunk {chunk_id}: {e}")
-            return False
+            logger.error(f"Error storing chunk {chunk_id} in Redis: {e}")
+            raise
     
     async def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a single chunk of data."""
@@ -261,4 +279,43 @@ class BaseRedisStorage(StorageInterface):
             return None
         except Exception as e:
             logger.error(f"Error getting document by doc_id {doc_id}: {e}")
+            return None
+    
+    async def store_chunk_embedding(self, chunk_id: str, embedding: np.ndarray) -> None:
+        """Store a chunk's embedding in Redis.
+        
+        Args:
+            chunk_id: Unique chunk ID
+            embedding: Vector embedding of the chunk
+        """
+        try:
+            key = self._get_chunk_key(chunk_id)
+            chunk_data = {
+                "embedding": embedding.tolist()
+            }
+            self.client.set(key, json.dumps(chunk_data))
+            logger.debug(f"Stored embedding for chunk {chunk_id} in Redis")
+        except Exception as e:
+            logger.error(f"Error storing embedding for chunk {chunk_id} in Redis: {e}")
+            raise
+    
+    async def get_chunk_embedding(self, chunk_id: str) -> Optional[np.ndarray]:
+        """Retrieve a chunk's embedding from Redis.
+        
+        Args:
+            chunk_id: Unique chunk ID
+            
+        Returns:
+            Numpy array containing the embedding, or None if not found
+        """
+        try:
+            key = self._get_chunk_key(chunk_id)
+            data = self.client.get(key)
+            if data:
+                chunk_data = json.loads(data)
+                if "embedding" in chunk_data:
+                    return np.array(chunk_data["embedding"])
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving embedding for chunk {chunk_id} from Redis: {e}")
             return None 

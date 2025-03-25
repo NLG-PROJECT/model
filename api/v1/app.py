@@ -28,8 +28,10 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=["*"],  # In production, replace with specific origins
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["*"],
+        max_age=3600,
     )
     
     # Include routers

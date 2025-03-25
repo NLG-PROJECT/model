@@ -34,4 +34,6 @@ class ProcessedFile(BaseModel):
 class UploadResponse(BaseModel):
     """Upload response schema."""
     message: str
-    processed_files: List[ProcessedFile] 
+    processed_files: List[ProcessedFile]
+    success_count: int = 0
+    error_count: int = 0 

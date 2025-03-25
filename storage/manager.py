@@ -83,7 +83,7 @@ class StorageManager:
             raise
     
     async def store_chunks(self, doc_id: str, chunks: List[str], embeddings: List[np.ndarray], chunk_metadata: List[Dict[str, Any]] = None) -> List[str]:
-        """Store document chunks and their embeddings.
+        """Store document chunks and their embeddings in Redis.
         
         Args:
             doc_id: Document ID
@@ -97,8 +97,8 @@ class StorageManager:
         chunk_ids = []
         
         try:
-            # Store chunks in Google Drive
-            for i, chunk in enumerate(chunks):
+            # Store chunks and embeddings in Redis
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                 chunk_id = f"{doc_id}_chunk_{i}"
                 metadata = chunk_metadata[i] if chunk_metadata and i < len(chunk_metadata) else {}
                 metadata.update({
@@ -107,16 +107,13 @@ class StorageManager:
                     "total_chunks": len(chunks)
                 })
                 
-                # Store chunk in Google Drive (synchronous)
-                stored_chunk_id = self.hard_storage.store_chunk(chunk_id, chunk, doc_id, metadata)
-                if not stored_chunk_id:
-                    raise Exception(f"Failed to store chunk {i} in Google Drive")
+                # Store chunk and embedding in Redis
+                await self.redis_storage.store_chunk(chunk_id, chunk, metadata)
+                await self.redis_storage.store_chunk_embedding(chunk_id, embedding)
                 
-                chunk_ids.append(stored_chunk_id)
+                chunk_ids.append(chunk_id)
             
-            # Store embeddings in Redis
-            await self.redis_storage.store_chunk_embeddings(doc_id, chunk_ids, embeddings)
-            
+            logger.info(f"Successfully stored {len(chunk_ids)} chunks for document {doc_id}")
             return chunk_ids
             
         except Exception as e:
