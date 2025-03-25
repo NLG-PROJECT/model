@@ -301,7 +301,7 @@ def generate_llm_response(question: str, context: str) -> str:
             f"You are an AI assistant chatbot that provides detailed and comprehensive answers based on the following context.\n\n"
             f"Context:\n{context}\n\n"
             f"User Question:\n{question}\n\n"
-            f"Please provide an in-depth and thorough response around 150 words."
+            f"Please provide an in-depth."
         )
 
         messages = [

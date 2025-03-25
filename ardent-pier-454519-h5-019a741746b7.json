@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ardent-pier-454519-h5",
+  "private_key_id": "019a741746b7a6d8c01c49c1694ab86fc5022d42",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFqcH6xb0ZLM7z\nVHRpOOH26RqqOqg33+kLlKKWzEvxCv2hAraf6tFVmCVvd0GxpAnKTAweDbMvQISB\nG3qqWwH4HcThSdUvMiZP8v8EGskG/mwEwjBJ6T5SnbHf7iy9Niax0GgKY3/5n6qx\n6Ft6cAVJGnBvKZo74Z+ZqB5u5PY6zJlh7b+YrnnxJ/fgJVBNIPySKRqeUkSAM5nE\nrH7fHIj7s4Cq6LX7jz/tb6aWZMkl+wP6nPy57+vGdNelG0096UyOuAEZxPM0RlLt\n/5ves0JGQk+nlyN7dt4e6DpIX0OZMyd1FvpmDkYoJP5rQuzMhAwOJImEnmXJeMPa\nh8SL2mb/AgMBAAECggEAYpRoXxYxWhXj3K15JWUuJQNavh1k+gDc7F6jvAuFsGCn\n355H0He/ES5BNVdH1z2VeGP3AyIYBG/r5av7wGyFDeZi42z8On6LZwIstzJYoflP\njAwBI0uFPpTROnpBq9gO8k2bJds73xYHfpUA0o59xFjATGB2QHklLPAQxYPBXc7+\nDJ+syo0KU1G/mVNjAlCSEJNCUAGEdyP/eVJausPwCYcraKp4ZL5YgWDkeCF3lQH2\n083+i7dVU7eEb/3ilhquJBYfKU0w6rXmw049d3oIp+LHtjVitMJMEIf5PFaFuSo8\nx9KW4+EJJQdc53BeqFLay3tqB61g+DvW/FMDauq0eQKBgQDobM7tTzAC2kW9Ufh8\n1c/ssQKIXmkSbRUqS3YSlc0PqE0YvWwSexxdWwIoNy2gacD55AYwnRjbEInrDOu5\n519T4x2Bc/xxTO/Gqus18ij+tBGtzzB2wB8N+PaPTkCjcg6vkm5QlMeHwI4PLT/4\nWmMUXzqqh2xnhXWCTh+xqf8x/QKBgQDZtlClxCxaF1xj7tuMF6HbgubPINtmL5f5\nDckbTI4+bEYfHpq65TC7LW81yhqYye/WTXi97DfHVj0xoe9AeNOr+FW6jyMeOOXM\nNCCyWqqsUkZQtdANO6D98/0y66W5okpml1MS5HlXKoRRTf7FilOiTN/hfKHPenLv\nhuSAFM3/qwKBgCDiBASfB3Pf3a4DQtymg1xBTtJsSQFKXYw2UOYgO3rTnNS7N+cF\nc+XhUlTOOa5QR/USxa1rDHExzdFrao5KpboAj9QYzMZa1DGPTOe88v/WCgpFHd4v\nIDWh24A62fpF0L4WQXU1F2WlYHPVOw+v+gSP1IT70+Jxh0aANwuzuV8hAoGBAMIm\nP81UIGlHI/FKdSd9e64SElrsZju+fbxwesOJheBNFktyM3IwKUECx4YkcYuHqgZm\nmCJmoWd2lKPKUV4hYkKd93WjaCHvg56TbgUfrcx2opYfTSY/4tYV29qpIuVkwQy0\nLjVO4pbFJ7KJ54WqUeMOwyiGyJYKEK1ikitWYk55AoGABTlIV/QcyoKxRLYDYA+s\n3tQEZyVVkib+0Avx6IHqmJPVGKwSTU9gVkKNofg1oznnPg83sBXJmwHV2yZDjnMH\nBBtvKBhiFLuhFlEaRG4mVXXQzPB/GvNB+aQ2cjzn7+jrxl1ewzdN7j6k49RPQ2f3\niZM4Jsov/FJb7vkmydTFXBk=\n-----END PRIVATE KEY-----\n",
+  "client_email": "nlg-project@ardent-pier-454519-h5.iam.gserviceaccount.com",
+  "client_id": "102907793296723754506",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/nlg-project%40ardent-pier-454519-h5.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

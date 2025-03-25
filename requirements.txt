@@ -3,14 +3,22 @@ uvicorn
 python-multipart
 PyPDF2
 python-docx
-requests
+requests>=2.31.0
 langchain-ollama
 beautifulsoup4
-python-dotenv
+python-dotenv>=1.0.0
 pydantic
 groq
-numpy
-redis
+numpy>=1.24.0
+redis>=4.5.0
 typing-extensions
-phi-agent
 httpx
+# Test dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+openpyxl>=3.1.0
+reportlab>=4.0.0
+python-magic>=0.4.27
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0
