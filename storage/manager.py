@@ -121,56 +121,40 @@ class StorageManager:
             raise
     
     async def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve a document and its metadata.
+        """Get a document by ID.
         
         Args:
             doc_id: Document ID
             
         Returns:
-            Document data and metadata
+            Document data if found, None otherwise
         """
         try:
-            # Try to get from cache first
-            cache_key = f"doc:{doc_id}"
-            cached_data = await self.redis_storage.get_chunk(cache_key)
-            if cached_data:
-                logger.debug(f"Retrieved document {doc_id} from cache")
-                return cached_data
-            
-            # Get document metadata from Redis
+            # Get document metadata
             metadata = await self.redis_storage.get_document_metadata(doc_id)
             if not metadata:
-                logger.warning(f"No metadata found for document {doc_id}")
+                logger.error(f"Document {doc_id} not found in Redis")
                 return None
             
-            # Get Google Drive file ID from metadata
-            gdrive_file_id = metadata.get("gdrive_file_id")
-            if not gdrive_file_id:
-                logger.warning(f"No Google Drive file ID found in metadata for {doc_id}")
-                return None
+            # Get document chunks
+            chunks = await self.redis_storage.get_chunks(doc_id)
             
-            # Get document content from Google Drive (synchronous)
-            doc_data = self.hard_storage.get_document(gdrive_file_id)
-            if not doc_data:
-                logger.warning(f"No content found for document {doc_id}")
-                return None
+            # Process chunks to ensure all data is JSON serializable
+            processed_chunks = []
+            for chunk in chunks:
+                processed_chunk = {
+                    "content": chunk.get("content", ""),
+                    "metadata": chunk.get("metadata", {})
+                }
+                if "embedding" in chunk:
+                    processed_chunk["embedding"] = chunk["embedding"].tolist() if isinstance(chunk["embedding"], np.ndarray) else chunk["embedding"]
+                processed_chunks.append(processed_chunk)
             
-            # Combine document data and metadata
-            result = {
-                "doc_id": doc_id,  # Ensure doc_id is at the root level
-                "filename": metadata.get("filename", ""),
-                "content_type": metadata.get("content_type", ""),
-                "size": metadata.get("size", 0),
-                "created_at": metadata.get("created_at", ""),
-                "updated_at": datetime.utcnow().isoformat(),
-                "content": doc_data.get("content", ""),
-                "metadata": metadata  # Keep all metadata including gdrive_file_id
+            return {
+                "doc_id": doc_id,
+                "metadata": metadata,
+                "chunks": processed_chunks
             }
-            
-            # Cache the result with a reasonable TTL (e.g., 1 hour)
-            await self.redis_storage.store_chunk(cache_key, result, ttl=3600)
-            
-            return result
             
         except Exception as e:
             logger.error(f"Error retrieving document {doc_id}: {e}")

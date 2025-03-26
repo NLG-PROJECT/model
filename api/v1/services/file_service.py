@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 import logging
 from datetime import datetime
 import uuid
@@ -14,6 +14,7 @@ import os
 import asyncio
 import numpy as np
 import time
+from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,7 @@ class FileService:
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         )
         
-        # Validate embedding service connection
-        if not self.embedding_service.validate_connection():
-            logger.warning("Failed to validate embedding service connection")
+        # Note: validate_connection is now called in the process_files method
     
     async def process_files(self, files: List[UploadFile], save_to_drive: bool = True) -> List[Dict[str, Any]]:
         """Process and store multiple uploaded files with optimized performance."""
@@ -350,13 +349,22 @@ class FileService:
             files = await self.storage_manager.list_documents()
             return [
                 {
-                    "doc_id": file["doc_id"],  # Main identifier at root level
+                    "doc_id": file["doc_id"],
                     "filename": file["metadata"]["filename"],
                     "content_type": file["metadata"]["content_type"],
                     "size": file["metadata"]["size"],
                     "created_at": file["metadata"]["created_at"],
-                    "updated_at": datetime.utcnow().isoformat(),
-                    "metadata": file["metadata"]  # Keep all metadata including gdrive_file_id
+                    "updated_at": file["metadata"].get("updated_at", datetime.utcnow().isoformat()),
+                    "metadata": {
+                        "filename": file["metadata"]["filename"],
+                        "content_type": file["metadata"]["content_type"],
+                        "size": file["metadata"]["size"],
+                        "created_at": file["metadata"]["created_at"],
+                        "updated_at": file["metadata"].get("updated_at", datetime.utcnow().isoformat()),
+                        "storage_type": file["metadata"].get("storage_type", "permanent"),
+                        "gdrive_file_id": file["metadata"].get("gdrive_file_id"),
+                        "metadata": file["metadata"].get("metadata", {})
+                    }
                 }
                 for file in files
             ]
@@ -379,34 +387,114 @@ class FileService:
             logger.error(f"Error deleting file {doc_id}: {e}")
             return False
     
-    async def get_file(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Get a single file by document ID.
-        
-        Args:
-            doc_id: The document ID (UUID) to retrieve
-            
-        Returns:
-            Dictionary containing file information and content, or None if not found
-        """
+    async def get_file(self, file_id: str) -> Dict[str, Any]:
+        """Get a single file by ID."""
         try:
-            # Get document data using doc_id
-            doc_data = await self.storage_manager.get_document(doc_id)
-            if doc_data:
-                metadata = doc_data.get("metadata", {})
-                return {
-                    "doc_id": doc_id,  # Main identifier at root level
-                    "filename": metadata.get("filename", ""),
-                    "content_type": metadata.get("content_type", ""),
-                    "size": metadata.get("size", 0),
-                    "created_at": metadata.get("created_at", ""),
-                    "updated_at": datetime.utcnow().isoformat(),
-                    "content": doc_data.get("content", ""),
-                    "metadata": metadata  # Keep all metadata including gdrive_file_id
-                }
+            # Get document from Redis
+            doc = await self.storage_manager.get_document(file_id)
+            if not doc:
+                raise HTTPException(status_code=404, detail="File not found")
             
-            logger.warning(f"Document {doc_id} not found")
-            return None
+            # Get the Google Drive file ID from metadata
+            metadata = doc.get("metadata", {})
+            gdrive_file_id = metadata.get("gdrive_file_id")
+            if not gdrive_file_id:
+                raise HTTPException(status_code=404, detail="Google Drive file ID not found")
+            
+            # Get file from Google Drive
+            drive_file = self.storage_manager.hard_storage.service.files().get(
+                fileId=gdrive_file_id,
+                fields='id, name, mimeType, size, createdTime, modifiedTime, appProperties'
+            ).execute()
+            
+            # Extract metadata from appProperties
+            drive_metadata = {}
+            for key, value in drive_file.get('appProperties', {}).items():
+                drive_metadata[key] = value
+            
+            # Create the nested metadata structure
+            file_metadata = {
+                "filename": drive_file['name'],
+                "content_type": drive_file['mimeType'],
+                "size": int(drive_file['size']),
+                "created_at": drive_file['createdTime'],
+                "updated_at": drive_file['modifiedTime'],
+                "storage_type": metadata.get("storage_type", "permanent"),
+                "gdrive_file_id": gdrive_file_id,
+                "metadata": metadata.get("metadata", {})
+            }
+            
+            # Create the response structure matching FileResponse model
+            result = {
+                "doc_id": file_id,
+                "filename": drive_file['name'],
+                "content_type": drive_file['mimeType'],
+                "size": int(drive_file['size']),
+                "created_at": drive_file['createdTime'],
+                "updated_at": drive_file['modifiedTime'],
+                "metadata": file_metadata
+            }
+            
+            return result
             
         except Exception as e:
-            logger.error(f"Error retrieving file {doc_id}: {e}")
-            return None 
+            logger.error(f"Error retrieving file {file_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    async def get_files(self) -> List[Dict[str, Any]]:
+        """Get all files."""
+        try:
+            # Get all document metadata from Redis
+            doc_metadata = await self.storage_manager.list_document_metadata()
+            
+            # Get all files from Google Drive
+            try:
+                results = self.storage_manager.drive_service.files().list(
+                    pageSize=100,
+                    fields='files(id, name, mimeType, size, createdTime, modifiedTime)'
+                ).execute()
+                
+                files = results.get('files', [])
+                
+                # Combine metadata
+                response_data = []
+                for file in files:
+                    file_id = file.get("id")
+                    if file_id in doc_metadata:
+                        # Get the base metadata
+                        base_metadata = doc_metadata[file_id]
+                        if not isinstance(base_metadata, dict):
+                            base_metadata = {}
+                        
+                        # Create the nested metadata structure
+                        file_metadata = {
+                            "filename": file.get("name", ""),
+                            "content_type": file.get("mimeType", ""),
+                            "size": int(file.get("size", 0)),
+                            "created_at": file.get("createdTime", ""),
+                            "updated_at": file.get("modifiedTime", datetime.utcnow().isoformat()),
+                            "storage_type": base_metadata.get("storage_type", "permanent"),
+                            "gdrive_file_id": file_id,
+                            "metadata": base_metadata.get("metadata", {})
+                        }
+                        
+                        # Create the response structure
+                        response_data.append({
+                            "doc_id": file_id,
+                            "filename": file.get("name", ""),
+                            "content_type": file.get("mimeType", ""),
+                            "size": int(file.get("size", 0)),
+                            "created_at": file.get("createdTime", ""),
+                            "updated_at": file.get("modifiedTime", datetime.utcnow().isoformat()),
+                            "metadata": file_metadata
+                        })
+                
+                return response_data
+                
+            except HttpError as e:
+                logger.error(f"Error getting files from Google Drive: {e}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting files: {e}")
+            return [] 

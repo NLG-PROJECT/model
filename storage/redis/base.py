@@ -40,10 +40,19 @@ class BaseRedisStorage(StorageInterface):
             ttl: Optional time-to-live in seconds
         """
         try:
+            # Convert chunk to string if it's bytes
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode('utf-8')
+            
             chunk_data = {
                 "content": chunk,
                 "metadata": metadata or {}
             }
+            
+            # Convert any bytes in metadata to strings
+            for key, value in chunk_data["metadata"].items():
+                if isinstance(value, bytes):
+                    chunk_data["metadata"][key] = value.decode('utf-8')
             
             key = self._get_chunk_key(chunk_id)
             self.client.set(key, json.dumps(chunk_data))
@@ -68,7 +77,7 @@ class BaseRedisStorage(StorageInterface):
             data = self.client.get(key)
             if data:
                 chunk_data = json.loads(data)
-                # Convert embedding back to numpy array
+                # Convert embedding back to numpy array if present
                 if "embedding" in chunk_data:
                     chunk_data["embedding"] = np.array(chunk_data["embedding"])
                 return chunk_data
@@ -80,8 +89,21 @@ class BaseRedisStorage(StorageInterface):
     async def store_document_metadata(self, doc_id: str, metadata: Dict[str, Any]) -> bool:
         """Store document metadata."""
         try:
+            # Convert any bytes in metadata to strings
+            processed_metadata = {}
+            for key, value in metadata.items():
+                if isinstance(value, bytes):
+                    processed_metadata[key] = value.decode('utf-8')
+                elif isinstance(value, dict):
+                    processed_metadata[key] = {
+                        k: v.decode('utf-8') if isinstance(v, bytes) else v
+                        for k, v in value.items()
+                    }
+                else:
+                    processed_metadata[key] = value
+            
             key = self._get_doc_metadata_key(doc_id)
-            self.client.set(key, json.dumps(metadata))
+            self.client.set(key, json.dumps(processed_metadata))
             return True
         except Exception as e:
             logger.error(f"Error storing metadata for doc {doc_id}: {e}")
@@ -225,9 +247,16 @@ class BaseRedisStorage(StorageInterface):
             # Store embeddings for each chunk
             for chunk_id, embedding in zip(chunk_ids, embeddings):
                 chunk_key = self._get_chunk_key(chunk_id)
+                # Convert numpy array to list and ensure it's JSON serializable
+                embedding_list = embedding.tolist()
                 chunk_data = {
                     "doc_id": doc_id,
-                    "embedding": embedding.tolist()
+                    "embedding": embedding_list,
+                    "content": "",  # Empty content for embedding-only chunks
+                    "metadata": {
+                        "doc_id": doc_id,
+                        "type": "embedding"
+                    }
                 }
                 self.client.set(chunk_key, json.dumps(chunk_data))
             
