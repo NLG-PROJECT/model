@@ -125,7 +125,7 @@ def generate_random_filename(extension: str) -> str:
     logger.debug(f"Generated random filename: {filename}")
     return filename
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[Dict[str, Any]]:
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
     """
     Split text into semantic chunks using the SemanticChunker.
     
@@ -135,13 +135,11 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[Dict
         overlap (int): Number of characters to overlap between chunks
         
     Returns:
-        List[Dict[str, Any]]: List of chunk dictionaries with text and metadata
+        List[str]: List of text chunks
     """
     logger.debug(f"Starting semantic text chunking. Total length: {len(text)}")
     chunker = SemanticChunker(min_chunk_size=chunk_size, overlap=overlap)
-    raw_chunks = chunker.chunk(text)
-    # Convert string chunks to dictionaries
-    chunks = [{'text': chunk, 'context': ''} for chunk in raw_chunks]
+    chunks = chunker.chunk(text)
     logger.debug(f"Semantic text chunking complete. Number of chunks: {len(chunks)}")
     return chunks
 
@@ -174,38 +172,142 @@ def save_uploaded_file(file: UploadFile) -> str:
         raise
     return filepath
 
-def embed_rich_chunks(chunks: List[Dict[str, Any]]) -> List[np.ndarray]:
-    """Generate embeddings for rich chunks with text and context."""
-    texts = []
-    for chunk in chunks:
-        text = chunk.get('text', '')
-        context = chunk.get('context', '')
-        combined = f"{text} {context}".strip()
-        texts.append(combined)
+def embed_text_chunks(text_chunks: List[str]) -> List[np.ndarray]:
+    logger.debug(f"Embedding {len(text_chunks)} text chunks.")
+    try:
+        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+        chunk_embeddings = embeddings.embed_documents(text_chunks)
+
+        # Convert each embedding list to a NumPy array of type float32
+        chunk_embeddings_np = [np.array(embedding).astype('float32') for embedding in chunk_embeddings]
+
+        logger.info(f"Generated embeddings for {len(text_chunks)} chunks.")
+        return chunk_embeddings_np  # List of NumPy arrays
+
+    except Exception as e:
+        logger.error(f"Failed to generate embeddings: {e}")
+        raise
+
+def initialize_redis_vector_index():
+    """Initialize Redis connection and create vector search index if it doesn't exist"""
+    global redis_client
     
-    embeddings = OllamaEmbeddings(model="nomic-embed-text").embed_documents(texts)
-    return [np.array(e).astype('float32') for e in embeddings]
+    try:
+        # Initialize Redis connection
+        redis_client = redis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            password=REDIS_PASSWORD,
+            decode_responses=False  # Need binary mode for vector storage
+        )
+        
+        # Check connection
+        redis_client.ping()
+        logger.info("Connected to Redis server successfully")
+        
+        # Check if index exists
+        try:
+            # Try to get info about the index
+            redis_client.ft(REDIS_INDEX_NAME).info()
+            logger.info(f"Redis index '{REDIS_INDEX_NAME}' already exists.")
+        except:
+            # Create vector index if it doesn't exist
+            schema = (
+                TextField("chunk"),
+                TextField("source"),
+                VectorField("embedding", 
+                            "HNSW", {
+                                "TYPE": "FLOAT32", 
+                                "DIM": EMBEDDING_DIMENSION, 
+                                "DISTANCE_METRIC": "COSINE"
+                            })
+            )
+            
+            definition = IndexDefinition(prefix=["doc:"], index_type=IndexType.HASH)
+            
+            redis_client.ft(REDIS_INDEX_NAME).create_index(
+                fields=schema,
+                definition=definition
+            )
+            logger.info(f"Created new Redis index '{REDIS_INDEX_NAME}'")
+            
+    except redis.ConnectionError as e:
+        logger.critical(f"Failed to connect to Redis: {e}")
+        raise RuntimeError(f"Redis connection failed: {e}")
+    except Exception as e:
+        logger.critical(f"Redis initialization error: {e}")
+        raise RuntimeError(f"Redis initialization error: {e}")
 
-def add_rich_chunks_to_redis(embeddings: List[np.ndarray], chunks: List[Dict[str, Any]], source: str = "unknown"):
-    for i, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
-        chunk_id = chunk.get('id') or str(uuid.uuid4())
-        chunk['id'] = chunk_id
-        chunk['source'] = source
-        redis_client.hset(f"chunk:{chunk_id}", mapping={"data": json.dumps(chunk)})
-        redis_client.hset(f"chunk:{chunk_id}", mapping={"embedding": pickle.dumps(embedding)})
+def add_embeddings_to_redis(embeddings: List[np.ndarray], chunks: List[str], source: str = "unknown"):
+    """Add embeddings to Redis with source tracking."""
+    try:
+        logger.info(f"Adding {len(embeddings)} embeddings to Redis from source: {source}")
+        for i, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
+            try:
+                # Convert numpy array to list for Redis storage
+                embedding_list = embedding.tolist()
+                
+                # Create a unique key for this embedding
+                key = f"doc:{source}:{i}"
+                
+                # Store the embedding and chunk with a 5-minute timeout
+                redis_client.hset(
+                    key,
+                    mapping={
+                        "embedding": json.dumps(embedding_list),
+                        "chunk": chunk,
+                        "source": source
+                    }
+                )
+                redis_client.expire(key, 300)  # 5-minute expiration
+                logger.info(f"Added embedding {i+1} to Redis successfully.")
+            except Exception as e:
+                logger.error(f"Failed to add embedding {i} to Redis: {str(e)}")
+                continue
+    except Exception as e:
+        logger.error(f"Error in add_embeddings_to_redis: {str(e)}")
+        raise
 
-def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[Dict[str, Any]]:
-    embedding = OllamaEmbeddings(model="nomic-embed-text").embed_query(prompt)
-    embedding = np.array(embedding).astype('float32')
-    # Placeholder: Replace with your actual Redis vector search logic
-    # This should return the keys/ids of the most similar chunks
-    # For demonstration, we'll just return the first top_k chunks
-    keys = redis_client.keys("chunk:*")[:top_k]
-    chunks = []
-    for key in keys:
-        chunk_data = json.loads(redis_client.hget(key, "data"))
-        chunks.append(chunk_data)
-    return chunks
+def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
+    """Retrieve similar text chunks from Redis using vector similarity search"""
+    logger.debug(f"Retrieving similar chunks for prompt: {prompt}")
+    
+    try:
+        # Embed the query
+        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+        query_embedding = np.array(embeddings.embed_query(prompt)).astype('float32')
+        
+        # Prepare the vector search query
+        vector_query = (
+            f"*=>[KNN {top_k} @embedding $vector AS score]"
+        )
+        
+        # Execute the vector search
+        query = (
+            Query(vector_query)
+            .dialect(2)  # Use Query dialect 2 for vector search
+            .sort_by("score")
+            .paging(0, top_k)
+            .return_fields("chunk", "score", "source")
+        )
+        
+        params_dict = {"vector": query_embedding.tobytes()}
+        
+        # Execute search
+        results = redis_client.ft(REDIS_INDEX_NAME).search(query, params_dict)
+        logger.debug(f"Search returned {results.total} results")
+        
+        # Extract chunks from results
+        similar_chunks = []
+        for doc in results.docs:
+            similar_chunks.append(doc.chunk)
+            logger.debug(f"Retrieved chunk with score {doc.score}, source: {doc.source}")
+        
+        return similar_chunks
+        
+    except Exception as e:
+        logger.error(f"Error during vector search: {e}")
+        return []
 
 def generate_llm_response(question: str, context: str) -> str:
     """Generate a response from the LLM using Groq client with streaming."""
@@ -309,14 +411,14 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 
     try:
         logger.info(f"Starting to embed {len(all_chunks)} chunks...")
-        new_embeddings = embed_rich_chunks(all_chunks)
+        new_embeddings = embed_text_chunks(all_chunks)
         logger.info(f"Successfully generated embeddings for {len(new_embeddings)} chunks")
         
         # Add embeddings to Redis with source information
         logger.info("Starting to add embeddings to Redis...")
         for i, (embedding, chunk, source) in enumerate(zip(new_embeddings, all_chunks, file_sources)):
             try:
-                add_rich_chunks_to_redis([embedding], [chunk], source)
+                add_embeddings_to_redis([embedding], [chunk], source)
                 logger.info(f"Successfully added embedding {i+1}/{len(new_embeddings)} to Redis")
             except Exception as e:
                 logger.error(f"Failed to add embedding {i} to Redis: {str(e)}", exc_info=True)
@@ -392,8 +494,8 @@ async def sitemap(
             chunks = chunk_text(cleaned_text)
             if chunks:
                 try:
-                    embeddings = embed_rich_chunks(chunks)
-                    add_rich_chunks_to_redis(embeddings, chunks, current_url)
+                    embeddings = embed_text_chunks(chunks)
+                    add_embeddings_to_redis(embeddings, chunks, current_url)
                     processed_urls += 1
                     embedded_count += len(chunks)
                     logger.info(f"Successfully embedded URL: {current_url}")
@@ -507,8 +609,8 @@ async def upload_urls(request: URLRequest) -> Dict[str, Any]:
             logger.error("No text extracted from the URL content.")
             raise ValueError("No text extracted from the URL content.")
 
-        embeddings = embed_rich_chunks(chunks)
-        add_rich_chunks_to_redis(embeddings, chunks, str(request.url))
+        embeddings = embed_text_chunks(chunks)
+        add_embeddings_to_redis(embeddings, chunks, str(request.url))
 
         logger.info(f"Processed and embedded content from URL: {request.url}")
 
@@ -529,43 +631,32 @@ async def upload_urls(request: URLRequest) -> Dict[str, Any]:
 async def chat(request: ChatRequest) -> ChatResponse:
     logger.info("Received chat request.")
     try:
+        # Retrieve similar chunks from Redis vector search
         similar_chunks = retrieve_similar_chunks(request.message, top_k=5)
+
         if not similar_chunks:
             logger.info("No similar chunks found for the given question.")
             return ChatResponse(response="No relevant information found. Please upload more documents or URLs.")
-        # Build a rich, structured context from chunk text and metadata
-        context = ""
-        for i, chunk in enumerate(similar_chunks, 1):
-            context += f"--- Chunk {i} ---\n"
-            context += f"Section Type: {chunk.get('section_type', '')}\n"
-            context += f"Item Number: {chunk.get('item_number', '')}\n"
-            context += f"Content Type: {chunk.get('content_type', '')}\n"
-            context += f"Chunk Type: {chunk.get('chunk_type', '')}\n"
-            context += f"Parent Section: {chunk.get('parent_section', '')}\n"
-            context += f"Hierarchy: {chunk.get('hierarchy', '')}\n"
-            context += f"Related Sections: {chunk.get('related_sections', '')}\n"
-            context += f"Source: {chunk.get('source', '')}\n"
-            context += f"Source Page: {chunk.get('source_page', '')}\n"
-            context += f"Text: {chunk.get('text', '')}\n"
-            # Attach footnotes if present
-            if chunk.get('footnotes'):
-                for j, footnote in enumerate(chunk['footnotes'], 1):
-                    context += f"  Footnote {j}: {footnote.get('text', '')}\n"
-            # Attach cross-references if present
-            if chunk.get('cross_references'):
-                for j, cref in enumerate(chunk['cross_references'], 1):
-                    context += f"  Cross-Reference {j}: {cref.get('text', '')}\n"
-            context += "\n"
-        logger.debug(f"Combined Rich Context for LLM:\n{context}")
+
+        # Combine the retrieved chunks as context
+        context = "\n".join(similar_chunks)
+        logger.debug(f"Combined Context for LLM:\n{context}")
+
+        # Generate a response using the LLM with the context
         response_text = generate_llm_response(request.message, context)
+
         if not response_text:
             logger.warning("LLM did not generate a response.")
             response_text = "I couldn't generate a response based on the provided information."
+
         logger.info("Generated response from LLM.")
         return ChatResponse(response=response_text)
+
     except HTTPException as http_exc:
+        # Re-raise HTTPExceptions to be handled by FastAPI
         logger.error(f"HTTPException in /chat endpoint: {http_exc.detail}")
         raise http_exc
+
     except Exception as e:
         logger.error(f"Error in /chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
@@ -636,55 +727,7 @@ async def flush_redis():
     """Endpoint to clear all Redis data"""
     return flush_redis_data()
 
-def initialize_redis_vector_index():
-    """Initialize Redis with vector search capability"""
-    global redis_client
-    try:
-        # Initialize Redis client
-        redis_client = redis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            password=REDIS_PASSWORD,
-            decode_responses=False  # Keep binary data for embeddings
-        )
-        
-        # Check Redis connection
-        redis_client.ping()
-        logger.info("Successfully connected to Redis")
-        
-        # Create vector index if it doesn't exist
-        try:
-            # Define the schema for the vector index
-            schema = (
-                TextField("$.data", as_name="data"),  # Store chunk data as JSON
-                VectorField("$.embedding",  # Vector field for embeddings
-                    "FLAT", {
-                        "TYPE": "FLOAT32",
-                        "DIM": EMBEDDING_DIMENSION,
-                        "DISTANCE_METRIC": "COSINE"
-                    }
-                )
-            )
-            
-            # Create the index
-            redis_client.ft(REDIS_INDEX_NAME).create_index(
-                schema,
-                definition=IndexDefinition(
-                    prefix=["chunk:"],
-                    index_type=IndexType.JSON
-                )
-            )
-            logger.info(f"Created Redis vector index: {REDIS_INDEX_NAME}")
-        except redis.ResponseError as e:
-            if "Index already exists" in str(e):
-                logger.info(f"Redis vector index {REDIS_INDEX_NAME} already exists")
-            else:
-                raise
-                
-    except Exception as e:
-        logger.critical(f"Failed to initialize Redis: {e}")
-        raise
-
+# Load Redis and initialize vector index at startup
 @app.on_event("startup")
 def startup_event():
     logger.info("Application startup initiated.")

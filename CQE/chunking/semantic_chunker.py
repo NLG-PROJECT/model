@@ -1,249 +1,111 @@
 import re
-from typing import List, Dict, Tuple
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from typing import List, Dict, Any
 
-class SECFilingChunker:
-    def __init__(self, min_chunk_size: int = 500, overlap: int = 100):
-        """
-        Initialize the SEC filing chunker.
-        
-        Args:
-            min_chunk_size (int): Minimum size for a chunk
-            overlap (int): Number of characters to overlap between chunks
-        """
-        self.min_chunk_size = min_chunk_size
-        self.overlap = overlap
-        
-        # SEC-specific section patterns
-        self.section_patterns = [
-            (r'^ITEM\s+\d+[A-Z]?\s*[:.]?\s*[A-Z\s]+$', 'item'),  # ITEM 1, ITEM 1A, etc.
-            (r'^PART\s+[IVX]+$', 'part'),  # PART I, PART II, etc.
-            (r'^[A-Z\s]+\s*\([A-Za-z\s]+\)$', 'subsection'),  # Risk Factors (Item 1A)
-            (r'^[A-Z\s]+[:.]$', 'header'),  # Standard headers
-            (r'^Table\s+\d+[A-Z]?\.', 'table'),  # Tables
-            (r'^Exhibit\s+\d+[A-Z]?\.', 'exhibit'),  # Exhibits
-            (r'^Note\s+\d+[A-Z]?\.', 'note'),  # Footnotes
-        ]
-        
-        # SEC-specific content types
-        self.content_types = {
-            'financial': {'balance', 'income', 'statement', 'cash flow', 'revenue', 'expense', 'profit', 'loss'},
-            'risk': {'risk', 'uncertainty', 'forward-looking', 'cautionary'},
-            'business': {'business', 'operations', 'strategy', 'market', 'competition'},
-            'legal': {'legal', 'proceedings', 'regulation', 'compliance', 'litigation'},
-            'management': {'management', 'discussion', 'analysis', 'MD&A', 'outlook'},
-            'footnote': {'note', 'footnote', 'disclosure', 'accounting'},
-            'technical': {'algorithm', 'complex', 'steps', 'conditions', 'function', 'recursive', 'binary', 'tree'},
-            'narrative': {'story', 'character', 'plot', 'setting', 'theme', 'once', 'upon', 'time'}
-        }
-        
-        # Content type specific chunk sizes
-        self.chunk_sizes = {
-            'financial': min_chunk_size * 2,  # Larger chunks for financial data
-            'risk': min_chunk_size,  # Standard size for risk factors
-            'business': min_chunk_size,  # Standard size for business description
-            'legal': min_chunk_size,  # Standard size for legal information
-            'management': min_chunk_size * 1.5,  # Larger chunks for MD&A
-            'footnote': min_chunk_size,  # Standard size for footnotes
-            'technical': min_chunk_size // 2,  # Smaller chunks for technical content
-            'narrative': min_chunk_size * 2,  # Larger chunks for narrative content
-            'general': min_chunk_size  # Default size
-        }
+class SemanticChunker:
+    def __init__(self):
+        pass
 
-    def identify_sections(self, text: str) -> List[Tuple[str, str, int]]:
+    def chunk(self, analyzed_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Identify SEC-specific sections in the text.
-        
+        Chunk SEC filing content using content-type specific logic and context preservation.
         Args:
-            text (str): The text to analyze
-            
+            analyzed_chunks (list): List of pre-processed, structured, and analyzed chunks (with metadata)
         Returns:
-            List[Tuple[str, str, int]]: List of (section_text, section_type, start_index)
+            list: List of enriched, context-aware chunks
         """
-        sections = []
-        lines = text.split('\n')
-        
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if not line:
+        final_chunks = []
+        current_financial = []
+        current_mdna = []
+        current_risk_intro = None
+        current_risk_chunks = []
+        footnote_map = {}
+        table_map = {}
+        parent_section = None
+
+        # First, index footnotes and tables for easy lookup
+        for chunk in analyzed_chunks:
+            if chunk.get('chunk_type') == 'footnote' or chunk.get('section_type', '').lower() == 'footnote':
+                footnote_map[chunk.get('item_number') or chunk.get('header', '')] = chunk
+            if chunk.get('chunk_type') == 'table' or chunk.get('section_type', '').lower() == 'financial statements':
+                table_map[chunk.get('item_number') or chunk.get('header', '')] = chunk
+
+        for chunk in analyzed_chunks:
+            ctype = chunk.get('section_type', '').lower()
+            chunk_type = chunk.get('chunk_type', 'narrative')
+            # Maintain parent section context
+            if chunk.get('item_number'):
+                parent_section = chunk.get('item_number')
+            chunk['parent_section'] = parent_section
+
+            # Financial Statements: group as one chunk
+            if ctype == 'financial statements' or chunk_type == 'table':
+                current_financial.append(chunk)
                 continue
-                
-            for pattern, section_type in self.section_patterns:
-                if re.match(pattern, line, re.IGNORECASE):
-                    # Only add if it's a main section (not a subsection)
-                    if section_type in ['item', 'part', 'table', 'note']:
-                        sections.append((line, section_type, i))
-                    break
-                    
-        return sections
-
-    def detect_content_type(self, text: str) -> str:
-        """
-        Detect the type of SEC content.
-        
-        Args:
-            text (str): The text to analyze
-            
-        Returns:
-            str: Content type (financial, risk, business, legal, management, footnote)
-        """
-        if not text.strip():
-            return 'narrative'
-            
-        text_lower = text.lower()
-        scores = {}
-        
-        for content_type, keywords in self.content_types.items():
-            score = sum(1 for keyword in keywords if keyword in text_lower)
-            scores[content_type] = score
-            
-        # If no content type is strongly detected, default to narrative
-        max_score = max(scores.values())
-        if max_score == 0:
-            return 'narrative'
-            
-        # If multiple content types have the same score, prefer narrative
-        max_types = [t for t, s in scores.items() if s == max_score]
-        if len(max_types) > 1 and 'narrative' in max_types:
-            return 'narrative'
-            
-        return max_types[0]
-
-    def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
-        """
-        Calculate semantic similarity between two text chunks.
-        
-        Args:
-            text1 (str): First text chunk
-            text2 (str): Second text chunk
-            
-        Returns:
-            float: Similarity score between 0 and 1
-        """
-        # Preprocess text
-        text1 = text1.lower().strip()
-        text2 = text2.lower().strip()
-        
-        # If either text is empty, return 0
-        if not text1 or not text2:
-            return 0.0
-            
-        # Calculate word overlap
-        words1 = set(re.findall(r'\w+', text1))
-        words2 = set(re.findall(r'\w+', text2))
-        
-        if not words1 or not words2:
-            return 0.0
-            
-        # Calculate word frequencies
-        freq1 = {}
-        freq2 = {}
-        
-        for word in re.findall(r'\w+', text1):
-            freq1[word] = freq1.get(word, 0) + 1
-            
-        for word in re.findall(r'\w+', text2):
-            freq2[word] = freq2.get(word, 0) + 1
-            
-        # Calculate weighted intersection and union
-        intersection = 0
-        union = 0
-        
-        for word in words1 | words2:
-            count1 = freq1.get(word, 0)
-            count2 = freq2.get(word, 0)
-            intersection += min(count1, count2)
-            union += max(count1, count2)
-            
-        if union == 0:
-            return 0.0
-            
-        # Calculate similarity score
-        similarity = intersection / union
-        
-        # Boost similarity for similar word patterns
-        if len(words1 & words2) / len(words1 | words2) > 0.5:
-            similarity = min(1.0, similarity * 1.5)
-            
-        return similarity
-
-    def chunk(self, text: str) -> List[str]:
-        """
-        Split SEC filing text into semantic chunks.
-        
-        Args:
-            text (str): The text to chunk
-            
-        Returns:
-            List[str]: List of text chunks
-        """
-        print("DEBUG: Starting chunking process")
-        print(f"DEBUG: Input text length: {len(text)}")
-        
-        # Normalize text by removing indentation and extra whitespace
-        lines = text.split('\n')
-        normalized_lines = []
-        for line in lines:
-            line = line.strip()
-            if line:
-                normalized_lines.append(line)
-        text = '\n'.join(normalized_lines)
-        print(f"DEBUG: Normalized text length: {len(text)}")
-        
-        # If text is shorter than min_chunk_size, pad it to meet the minimum size
-        if len(text) < self.min_chunk_size:
-            padding = " " * (self.min_chunk_size - len(text))
-            return [text + padding]
-            
-        # If text is very long, split it into smaller chunks
-        if len(text) > self.min_chunk_size * 10:
-            chunks = []
-            current_chunk = ""
-            words = text.split()
-            for word in words:
-                if len(current_chunk) + len(word) + 1 > self.min_chunk_size:
-                    chunks.append(current_chunk)
-                    current_chunk = word
+            # MD&A: larger narrative chunks
+            elif ctype == 'md&a':
+                current_mdna.append(chunk)
+                continue
+            # Risk Factors: chunk by individual risk, keep context
+            elif ctype == 'risk factors':
+                if current_risk_intro is None:
+                    current_risk_intro = chunk
                 else:
-                    if current_chunk:
-                        current_chunk += " "
-                    current_chunk += word
-            if current_chunk:
-                chunks.append(current_chunk)
-            return chunks
-            
-        # Split text into sections based on Table and Note markers
-        sections = []
-        current_section = []
-        
-        for line in text.split('\n'):
-            if line.startswith(('Table', 'Note')) and current_section:
-                sections.append('\n'.join(current_section))
-                current_section = [line]
+                    current_risk_chunks.append(chunk)
+                continue
+            # Footnotes: attach to referenced content
+            elif ctype == 'footnote' or chunk_type == 'footnote':
+                # Will be attached later
+                continue
+            # Tables: keep as separate, link to context
+            elif chunk_type == 'table':
+                chunk['linked_context'] = chunk.get('parent_section')
+                final_chunks.append(chunk)
+                continue
+            # Default: narrative or other
             else:
-                current_section.append(line)
-                
-        if current_section:
-            sections.append('\n'.join(current_section))
-            
-        print(f"DEBUG: Found {len(sections)} sections")
-        
-        # Group sections into table-note pairs
-        chunks = []
-        i = 0
-        while i < len(sections):
-            if sections[i].startswith('Table'):
-                chunk = sections[i]
-                if i + 1 < len(sections) and sections[i + 1].startswith('Note'):
-                    chunk += "\n\n" + sections[i + 1]
-                    i += 2
-                else:
-                    i += 1
-                chunks.append(chunk)
-            else:
-                i += 1
-                
-        print(f"DEBUG: Created {len(chunks)} chunks")
-        return chunks
+                final_chunks.append(chunk)
+
+        # Group all financial statements as one chunk
+        if current_financial:
+            merged = self._merge_chunks(current_financial, chunk_type='table', section_type='Financial Statements')
+            final_chunks.append(merged)
+        # Group all MD&A as one chunk
+        if current_mdna:
+            merged = self._merge_chunks(current_mdna, chunk_type='narrative', section_type='MD&A')
+            final_chunks.append(merged)
+        # Risk Factors: intro + each risk as a chunk
+        if current_risk_intro:
+            final_chunks.append(current_risk_intro)
+        for risk_chunk in current_risk_chunks:
+            risk_chunk['context'] = current_risk_intro.get('text', '') if current_risk_intro else ''
+            final_chunks.append(risk_chunk)
+        # Attach footnotes to referenced content
+        for chunk in final_chunks:
+            related = chunk.get('related_sections', [])
+            attached_footnotes = []
+            for rel in related:
+                if rel in footnote_map:
+                    attached_footnotes.append(footnote_map[rel])
+            if attached_footnotes:
+                chunk['footnotes'] = attached_footnotes
+        # Maintain hierarchy and relationships
+        for chunk in final_chunks:
+            chunk['hierarchy'] = [chunk.get('parent_section'), chunk.get('item_number')]
+        return final_chunks
+
+    def _merge_chunks(self, chunks: List[Dict[str, Any]], chunk_type: str, section_type: str) -> Dict[str, Any]:
+        """
+        Merge a list of chunks into one, preserving metadata and context.
+        """
+        merged_text = '\n\n'.join([c.get('text', '') for c in chunks])
+        merged = {
+            'text': merged_text,
+            'chunk_type': chunk_type,
+            'section_type': section_type,
+            'item_number': chunks[0].get('item_number'),
+            'parent_section': chunks[0].get('parent_section'),
+            'related_sections': sum([c.get('related_sections', []) for c in chunks], []),
+            'source_page': chunks[0].get('source_page'),
+            'hierarchy': [chunks[0].get('parent_section'), chunks[0].get('item_number')],
+        }
+        return merged
