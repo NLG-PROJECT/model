@@ -1,0 +1,242 @@
+[
+  {
+    "0": "3/16/25, 12:33 PM",
+    "1": "intc-20231230",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "",
+    "2": "Table of Contents"
+  },
+  {
+    "0": "",
+    "1": "The valuation of inventory also requires us to estimate obsolete and excess inventory, as well as inventory that is not of saleable quality. We use a demand",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "forecast to develop our short-term manufacturing plans to enable consistency between inventory valuations and build decisions. For certain new products,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "we have limited historical data when developing these demand forecasts. We compare the estimate of future demand to work in process and finished",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "goods inventory levels to determine the amount, if any, of obsolete or excess inventory. When our demand forecast for specific products is greater than",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "actual demand and we fail to reduce manufacturing output accordingly, we write off amounts considered to be excess inventory.",
+    "2": ""
+  },
+  {
+    "0": "Long-Lived Assets",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Property, Plant, and Equipment",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "We compute depreciation using the straight-line method over the estimated useful life of assets. We also capitalize interest on borrowings related to eligible",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "capital expenditures. Capitalized interest is added to the cost of qualified assets and depreciated together with that asset cost.",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "At least annually, we evaluate the period over which we expect to recover the economic value of our property, plant, and equipment, considering factors",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "such as the process technology cadence between node transitions, changes in machinery and equipment technology, and re-use of machinery and tools",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "across each generation of process technology. As we make manufacturing process conversions and other factory planning decisions, we use assumptions",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "involving the use of management judgments regarding the remaining useful lives of assets, primarily process-specific semiconductor manufacturing tools",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "and building improvements. When we determine that the useful lives of assets are shorter or longer than we had originally estimated, we adjust the rate of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "depreciation to reflect the assets' revised useful lives. Effective January 2023, the estimated useful lives of certain machinery and equipment in our wafer",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "fabrication facilities were increased from 5 to 8 years. This change in estimate was applied prospectively beginning in the first quarter of 2023.",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Assets are categorized and evaluated for impairment at the lowest level of identifiable cash flows. Factors that we consider in deciding when to perform an",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "impairment review include significant under-performance of a business or product line in relation to expectations, significant negative industry or economic",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "trends, and significant changes or planned changes in our use and fungibility of the assets. If an asset grouping carrying value is not recoverable through",
+    "2": ""
+  },
+  {
+    "0": "the related undiscounted cash flows, the asset grouping is considered to be impaired.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Identified Intangible Assets",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "We amortize acquisition-related intangible assets that are subject to amortization over their estimated useful lives. Acquisition-related, in-process R&D",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "assets represent the fair value of incomplete R&D projects that had not reached technological feasibility as of the date of acquisition; initially, these are",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "classified as in-process R&D and are not subject to amortization. Once these R&D projects are completed, the asset balances are transferred from in-",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "process R&D to acquisition-related developed technology and are subject to amortization from that point forward. The asset balances relating to projects",
+    "2": ""
+  },
+  {
+    "0": "that are abandoned after acquisition are impaired and expensed to R&D.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "We perform periodic reviews of significant finite-lived identified intangible assets to determine whether facts and circumstances indicate that the carrying",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "amount may not be recoverable. These reviews can be affected by various factors, including external factors such as industry and economic trends, and",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "internal factors such as changes in our business strategy and our forecasts for specific product lines. Periodically, we also evaluate the estimated remaining",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "useful lives of purchased intangible assets and whether events or changes in circumstances warrant a revision to the remaining periods of amortization. We",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "may adjust the period over which these assets are amortized to reflect the period in which they contribute to our cash flows.",
+    "2": ""
+  },
+  {
+    "0": "Goodwill",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Our reporting units are the same as our operating segments. We evaluate our reporting units annually or when triggered, such as upon reorganization of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "our operating segments. We perform an annual impairment assessment of goodwill at the reporting unit level in the fourth quarter of each year, or more",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "frequently if indicators of potential impairment exist. The reporting unit's carrying value used in an impairment assessment represents the assignment of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "various assets and liabilities, excluding certain corporate assets and liabilities, such as cash, investments, and debt. The impairment assessment may",
+    "2": ""
+  },
+  {
+    "0": "include both qualitative and quantitative factors to assess the likelihood of an impairment.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Qualitative factors used include industry and market considerations, overall financial performance, and other relevant events and factors affecting the",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "reporting unit. We may also perform a quantitative analysis to support the qualitative factors by applying sensitivities to assumptions and inputs used in",
+    "2": ""
+  },
+  {
+    "0": "measuring a reporting unit's fair value.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Our quantitative impairment assessment considers both the income approach and the market approach to estimate a reporting unit's fair value. Significant",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "estimates include market segment growth rates, our assumed market segment share, estimated gross margins, operating expenses, and discount rates",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "based on a reporting unit's weighted average cost of capital. We test the reasonableness of the inputs and outcomes of our discounted cash flow analysis",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "against available market data. These estimates change from year to year based on operating results, market conditions, and other factors and could",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "materially affect the determination of each reporting unit's fair value and potential goodwill impairment for each reporting unit. Our quantitative assessment",
+    "2": ""
+  },
+  {
+    "0": "is sensitive to changes in underlying estimates and assumptions, the most sensitive of which is the discount rate.",
+    "1": "",
+    "2": ""
+  }
+]

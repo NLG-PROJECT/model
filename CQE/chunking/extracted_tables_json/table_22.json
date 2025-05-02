@@ -1,0 +1,98 @@
+[
+  {
+    "0": "Process and packaging. Our leading-edge process and packaging technology and world-class IP portfolio are key to the success of our strategy. We are",
+    "1": ""
+  },
+  {
+    "0": "committed to achieving process technology leadership in 2025 by planning to deliver five technology nodes in four years. In addition, we have solidified our",
+    "1": ""
+  },
+  {
+    "0": "process and packaging offerings to external customers through IFS.",
+    "1": ""
+  },
+  {
+    "0": "\u25aa",
+    "1": "Intel 7 process node is in production for our 13th Gen Intel Core processors and represents the continuous improvement of transistor and"
+  },
+  {
+    "0": "",
+    "1": "interconnect performance."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Intel 4, our first EUV node, delivers significant density scaling and approximately 20% performance-per-watt improvement over Intel 7. The Intel"
+  },
+  {
+    "0": "",
+    "1": "Core Ultra processor is our first high-volume client product on Intel 4 and began shipping to customers in Q3 2023."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Intel 3 is expected to deliver further logic scaling and up to 18% performance-per-watt improvement over Intel 4. Intel 3 is our first advanced node"
+  },
+  {
+    "0": "",
+    "1": "offered to IFS customers and is optimized for the needs of data center products."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Intel 20A will follow Intel 3 and will introduce two breakthrough technologies that we expect to deliver up to a 15% performance-per-watt"
+  },
+  {
+    "0": "",
+    "1": "improvement over Intel 3: RibbonFET and PowerVia. RibbonFET, our implementation of a gate-all-around transistor, is designed to deliver faster"
+  },
+  {
+    "0": "",
+    "1": "transistor switching speeds while achieving the same drive current as multiple fins, but in a smaller footprint. PowerVia is our unique industry-first"
+  },
+  {
+    "0": "",
+    "1": "implementation of backside power delivery that is designed to optimize signal transmission by eliminating the need for power routing on the front"
+  },
+  {
+    "0": "",
+    "1": "side of the wafer."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Intel 18A, our second IFS advanced node offering, will improve on Intel 20A by delivering ribbon innovation for design optimization and line width"
+  },
+  {
+    "0": "",
+    "1": "reduction. Intel 18A is expected to deliver an additional 10% improvement in performance per watt over Intel 20A."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Beyond Intel 18A, we have initiated definition and development of our next two process nodes and continue to define, build, and develop the next-"
+  },
+  {
+    "0": "",
+    "1": "generation High Numerical Aperture EUV lithography into our process technology roadmap. To continue our modernization and infrastructure"
+  },
+  {
+    "0": "",
+    "1": "expansions, we have begun the installation of the world\u2019s first High-NA EUV tool for commercial use at our Gordon Moore Park in Oregon."
+  },
+  {
+    "0": "\u25aa",
+    "1": "Our family of 3D advanced packaging technology will usher in the next generation of Foveros technology, enabling us to mix multiple top die tiles"
+  },
+  {
+    "0": "",
+    "1": "with multiple base tiles across mixed fab nodes, providing greater flexibility for disaggregated chip designs. Our future Foveros Direct technology"
+  },
+  {
+    "0": "",
+    "1": "should scale interconnect pitch below 10\u00b5m, enable direct copper-to-copper bonding for low-resistance interconnects, and blur the boundary"
+  },
+  {
+    "0": "",
+    "1": "between wafer and package. Longer term, we expect to deliver complete glass substrate solutions as the next generation of advanced packaging"
+  },
+  {
+    "0": "",
+    "1": "designed to enable continued scaling of transistors in a package."
+  }
+]
