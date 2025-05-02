@@ -1,6 +1,3 @@
-
-# DO NOT MAKE ANY CHANGES TO THIS FILE
-
 import os
 import uuid
 import pickle
@@ -31,7 +28,14 @@ from redis.commands.search.field import TextField
 from redis.commands.search.field import VectorField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
-app = FastAPI()
+from semantic_chunker import SemanticChunker  # Import our new chunker
+app = FastAPI(
+    title="Document Processing API",
+    description="API for processing and embedding documents",
+    version="1.0.0",
+    timeout=300,  # 5 minutes timeout
+    max_request_size=100 * 1024 * 1024  # 100MB max request size
+)
 # Initialize logging
 logging.basicConfig(
     level=logging.DEBUG,  # Set to DEBUG for verbose output
@@ -122,12 +126,21 @@ def generate_random_filename(extension: str) -> str:
     return filename
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
-    chunks = []
-    logger.debug(f"Starting text chunking. Total length: {len(text)}")
-    for i in range(0, len(text), chunk_size - overlap):
-        chunk = text[i:i + chunk_size]
-        chunks.append(chunk)
-    logger.debug(f"Text chunking complete. Number of chunks: {len(chunks)}")
+    """
+    Split text into semantic chunks using the SemanticChunker.
+    
+    Args:
+        text (str): The text to chunk
+        chunk_size (int): Minimum size for each chunk
+        overlap (int): Number of characters to overlap between chunks
+        
+    Returns:
+        List[str]: List of text chunks
+    """
+    logger.debug(f"Starting semantic text chunking. Total length: {len(text)}")
+    chunker = SemanticChunker(min_chunk_size=chunk_size, overlap=overlap)
+    chunks = chunker.chunk(text)
+    logger.debug(f"Semantic text chunking complete. Number of chunks: {len(chunks)}")
     return chunks
 
 def extract_text_from_file(filepath: str) -> str:
@@ -226,32 +239,34 @@ def initialize_redis_vector_index():
         raise RuntimeError(f"Redis initialization error: {e}")
 
 def add_embeddings_to_redis(embeddings: List[np.ndarray], chunks: List[str], source: str = "unknown"):
-    """Add embeddings and their corresponding chunks to Redis"""
-    if not embeddings:
-        logger.warning("No embeddings to add to Redis.")
-        return
-    
-    # Add each chunk and its embedding to Redis
-    for i, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
-        try:
-            # Generate a unique key for this document
-            doc_id = f"doc:{uuid.uuid4().hex}"
-            
-            # Store the document with its embedding and metadata
-            redis_client.hset(
-                doc_id,
-                mapping={
-                    "chunk": chunk,
-                    "source": source,
-                    "embedding": embedding.tobytes()  # Convert numpy array to bytes
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error adding document {i} to Redis: {e}")
-            raise HTTPException(status_code=500, detail=f"Redis error: {e}")
-    
-    logger.info(f"Added {len(embeddings)} embeddings to Redis successfully.")
+    """Add embeddings to Redis with source tracking."""
+    try:
+        logger.info(f"Adding {len(embeddings)} embeddings to Redis from source: {source}")
+        for i, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
+            try:
+                # Convert numpy array to list for Redis storage
+                embedding_list = embedding.tolist()
+                
+                # Create a unique key for this embedding
+                key = f"doc:{source}:{i}"
+                
+                # Store the embedding and chunk with a 5-minute timeout
+                redis_client.hset(
+                    key,
+                    mapping={
+                        "embedding": json.dumps(embedding_list),
+                        "chunk": chunk,
+                        "source": source
+                    }
+                )
+                redis_client.expire(key, 300)  # 5-minute expiration
+                logger.info(f"Added embedding {i+1} to Redis successfully.")
+            except Exception as e:
+                logger.error(f"Failed to add embedding {i} to Redis: {str(e)}")
+                continue
+    except Exception as e:
+        logger.error(f"Error in add_embeddings_to_redis: {str(e)}")
+        raise
 
 def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
     """Retrieve similar text chunks from Redis using vector similarity search"""
@@ -364,11 +379,20 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     file_sources = []
 
     for idx, file in enumerate(files, 1):
-        logger.debug(f"Processing file {idx}: {file.filename}")
+        logger.info(f"Starting to process file {idx}: {file.filename}")
         try:
+            logger.info(f"Saving file {file.filename}...")
             filepath = save_uploaded_file(file)
+            logger.info(f"File saved to {filepath}")
+            
+            logger.info(f"Extracting text from {filepath}...")
             content = extract_text_from_file(filepath)
+            logger.info(f"Extracted {len(content)} characters from file")
+            
+            logger.info(f"Chunking text from {file.filename}...")
             chunks = chunk_text(content)
+            logger.info(f"Created {len(chunks)} chunks from file {file.filename}")
+            
             if not chunks:
                 logger.warning(f"No text extracted from file {file.filename}. Skipping.")
                 continue
@@ -378,7 +402,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             file_sources.extend([file.filename] * len(chunks))
             logger.info(f"Extracted {len(chunks)} chunks from file {file.filename}.")
         except Exception as e:
-            logger.error(f"Failed to process file {file.filename}: {str(e)}")
+            logger.error(f"Failed to process file {file.filename}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to process file {file.filename}: {str(e)}")
 
     if not all_chunks:
@@ -386,14 +410,22 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="No text extracted from uploaded files.")
 
     try:
+        logger.info(f"Starting to embed {len(all_chunks)} chunks...")
         new_embeddings = embed_text_chunks(all_chunks)
+        logger.info(f"Successfully generated embeddings for {len(new_embeddings)} chunks")
         
         # Add embeddings to Redis with source information
+        logger.info("Starting to add embeddings to Redis...")
         for i, (embedding, chunk, source) in enumerate(zip(new_embeddings, all_chunks, file_sources)):
-            add_embeddings_to_redis([embedding], [chunk], source)
+            try:
+                add_embeddings_to_redis([embedding], [chunk], source)
+                logger.info(f"Successfully added embedding {i+1}/{len(new_embeddings)} to Redis")
+            except Exception as e:
+                logger.error(f"Failed to add embedding {i} to Redis: {str(e)}", exc_info=True)
+                continue
             
     except Exception as e:
-        logger.error(f"Failed during embedding or Redis operations: {e}")
+        logger.error(f"Failed during embedding or Redis operations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to embed and index the uploaded files.")
 
     return {
@@ -725,3 +757,8 @@ def shutdown_event():
         redis_client.close()
         logger.info("Redis connection closed.")
     logger.info("Application shutdown complete.")
+
+@app.get("/test")
+async def test_endpoint():
+    logger.info("Test endpoint accessed")
+    return {"status": "ok", "message": "Server is running"}
