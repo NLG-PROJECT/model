@@ -1,4 +1,3 @@
-
 # DO NOT MAKE ANY CHANGES TO THIS FILE
 
 import os
@@ -18,7 +17,7 @@ from pathlib import Path
 import json
 import logging
 import sys
-from groq import Groq  # New import for Groq client
+from openai import OpenAI  # Changed from Groq to OpenAI
 import subprocess
 import time
 import signal
@@ -50,13 +49,13 @@ env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
 logger.debug(f"Loaded environment variables from {env_path}")
 
-# Retrieve Groq Cloud API key from environment
-GROQ_CLOUD_API_KEY = os.getenv("GROQ_CLOUD_API_KEY")
-if not GROQ_CLOUD_API_KEY:
-    logger.critical("GROQ_CLOUD_API_KEY is not set in the environment variables.")
-    raise ValueError("GROQ_CLOUD_API_KEY is not set in the environment variables.")
+# Retrieve OpenAI API key from environment
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    logger.critical("OPENAI_API_KEY is not set in the environment variables.")
+    raise ValueError("OPENAI_API_KEY is not set in the environment variables.")
 else:
-    logger.info("Groq Cloud API Key loaded successfully.")
+    logger.info("OpenAI API Key loaded successfully.")
 
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -295,11 +294,11 @@ def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
         return []
 
 def generate_llm_response(question: str, context: str) -> str:
-    """Generate a response from the LLM using Groq client with streaming."""
+    """Generate a response from the LLM using OpenAI client with streaming."""
     try:
-        # Initialize the Groq client with the API key
-        client = Groq(api_key=GROQ_CLOUD_API_KEY)
-        logger.debug("Initialized Groq client.")
+        # Initialize the OpenAI client with the API key
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        logger.debug("Initialized OpenAI client.")
 
         prompt = (
             f"You are an AI assistant chatbot that provides detailed and comprehensive answers based on the following context.\n\n"
@@ -313,10 +312,10 @@ def generate_llm_response(question: str, context: str) -> str:
             {"role": "user", "content": prompt},
         ]
 
-        logger.debug("Sending completion request to Groq Cloud API.")
+        logger.debug("Sending completion request to OpenAI API.")
 
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="gpt-4-turbo-preview",  # Using GPT-4 Turbo
             messages=messages,
             temperature=0.65,
             max_tokens=18890,
@@ -327,25 +326,9 @@ def generate_llm_response(question: str, context: str) -> str:
 
         response_text = ""
         for chunk in completion:
-            # Ensure that choices and delta exist
-            if not hasattr(chunk, 'choices') or not chunk.choices:
-                logger.warning("Chunk does not have 'choices'. Skipping.")
-                continue
-
-            choice = chunk.choices[0]
-            if not hasattr(choice, 'delta') or not choice.delta:
-                logger.warning("Choice does not have 'delta'. Skipping.")
-                continue
-
-            # Access 'content' using attribute access
-            chunk_content = getattr(choice.delta, 'content', '')
-
-            # Ensure chunk_content is a string
-            if isinstance(chunk_content, str) and chunk_content:
-                response_text += chunk_content
-                logger.debug(f"Received chunk: {chunk_content}")
-            else:
-                logger.debug("No content in this chunk.")
+            if chunk.choices[0].delta.content is not None:
+                response_text += chunk.choices[0].delta.content
+                logger.debug(f"Received chunk: {chunk.choices[0].delta.content}")
 
         if not response_text.strip():
             logger.warning("LLM did not return any text in the response.")
@@ -355,7 +338,7 @@ def generate_llm_response(question: str, context: str) -> str:
 
     except Exception as e:
         logger.error(f"Error generating LLM response: {e}")
-        raise HTTPException(status_code=500, detail="Error generating response from Groq Cloud API.")
+        raise HTTPException(status_code=500, detail="Error generating response from OpenAI API.")
 
 @app.post("/upload/files")
 async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
@@ -632,7 +615,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @app.get("/")
 def read_root():
     logger.info("Root endpoint accessed.")
-    return {"message": "AI Bot Backend with Redis Vector Database and Groq Cloud is running."}
+    return {"message": "AI Bot Backend with Redis Vector Database and OpenAI GPT is running."}
 
 # Ollama Process Management
 ollama_process = None
