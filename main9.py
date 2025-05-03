@@ -157,7 +157,6 @@ def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
         )
         context = response.json()["answer"]["message"]
 
-        # Always use the fallback as context, but only embed if similarity is strong
         fallback_vector = np.array(OllamaEmbeddings(model="nomic-embed-text").embed_query(context)).astype('float32')
         prompt_vector = np.array(OllamaEmbeddings(model="nomic-embed-text").embed_query(prompt)).astype('float32')
         similarity = cosine_similarity(prompt_vector, fallback_vector)
@@ -177,21 +176,22 @@ def generate_llm_response(question: str, context: str) -> str:
     try:
         from groq import Groq
         client = Groq(api_key=GROQ_CLOUD_API_KEY)
+        identity = "You are DocuGroq, a world-class AI assistant that provides concise, insightful answers to document-based questions."
+        instructions = (
+            "Only respond based on the provided context. Use short, structured answers where possible. Aim for 100 tokens and go up to 200 only when absolutely necessary."
+        )
         prompt = (
-            f"You are an AI assistant chatbot that provides detailed and comprehensive answers based on the following context.\n\n"
-            f"Context:\n{context}\n\n"
-            f"User Question:\n{question}\n\n"
-            f"Please provide an in-depth and thorough response."
+            f"{identity}\n\nContext:\n{context}\n\nUser Question:\n{question}\n\nInstructions:\n{instructions}"
         )
         messages = [
-            {"role": "system", "content": "You are a highly detailed-oriented and thorough assistant."},
+            {"role": "system", "content": identity},
             {"role": "user", "content": prompt},
         ]
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.65,
-            max_tokens=2048,
+            temperature=0.55,
+            max_tokens=200,
             top_p=0.7,
             stream=False
         )
