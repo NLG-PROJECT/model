@@ -1,4 +1,4 @@
-### PATCHED UPLOAD ENDPOINT WITH TRUE PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING + CHAT FALLBACK HANDLER ###
+### PATCHED UPLOAD ENDPOINT WITH TRUE PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING + CHAT FALLBACK HANDLER + REDIS TRAINING FROM FALLBACK + SIMILARITY-BASED FALLBACK CONTROL + QUALITY FILTERING ###
 
 import os
 import uuid
@@ -40,6 +40,7 @@ DOCUMENTS_DIR = 'documents'
 FILES_LIST_PATH = 'files_list.json'
 USER_SESSION_FILE = 'user_session.json'
 USER_LOG_FILE = 'user_logs.jsonl'
+SIMILARITY_THRESHOLD = 0.35
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 # Redis init
@@ -123,6 +124,9 @@ def log_user_event(step: str, status: str, detail: str = ""):
     with open(USER_LOG_FILE, "a") as log_file:
         log_file.write(json.dumps(log_entry) + "\n")
 
+def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
+    return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+
 def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
     try:
         embeddings = OllamaEmbeddings(model="nomic-embed-text")
@@ -133,12 +137,14 @@ def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
             redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, top_k).return_fields("chunk", "score"),
             params_dict
         )
-        return [doc.chunk for doc in redis_query.docs]
+        results = redis_query.docs
+        good_chunks = [doc.chunk for doc in results if float(doc.score) <= SIMILARITY_THRESHOLD]
+        return good_chunks
     except Exception as e:
         log_user_event("redis_search", "error", str(e))
         return []
 
-def fallback_askyourpdf_context(prompt: str) -> str:
+def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
     try:
         with open(USER_SESSION_FILE, "r") as f:
             session = json.load(f)
@@ -149,7 +155,20 @@ def fallback_askyourpdf_context(prompt: str) -> str:
             headers={"x-api-key": ASKYOURPDF_API_KEY, "Content-Type": "application/json"},
             json=chat_history
         )
-        return response.json()["answer"]["message"]
+        context = response.json()["answer"]["message"]
+
+        # Always use the fallback as context, but only embed if similarity is strong
+        fallback_vector = np.array(OllamaEmbeddings(model="nomic-embed-text").embed_query(context)).astype('float32')
+        prompt_vector = np.array(OllamaEmbeddings(model="nomic-embed-text").embed_query(prompt)).astype('float32')
+        similarity = cosine_similarity(prompt_vector, fallback_vector)
+
+        if similarity >= SIMILARITY_THRESHOLD:
+            fallback_chunks = chunk_text(context)
+            fallback_embeddings = embed_text_chunks(fallback_chunks)
+            fallback_base = f"{base_doc_id}:askfallback"
+            add_embeddings_to_redis(fallback_embeddings, fallback_chunks, fallback_base, source="askyourpdf_fallback")
+
+        return context
     except Exception as e:
         log_user_event("askyourpdf_context", "error", str(e))
         return ""
@@ -185,8 +204,6 @@ def generate_llm_response(question: str, context: str) -> str:
 def chat(request: ChatRequest) -> ChatResponse:
     try:
         log_user_event("chat", "started", request.message)
-
-        # Load session and history
         session = json.load(open(USER_SESSION_FILE)) if os.path.exists(USER_SESSION_FILE) else {}
         chat_history = session.get("chat_history", [])
         chat_history.append({"sender": "user", "message": request.message})
@@ -196,7 +213,8 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         if not context:
             log_user_event("context", "fallback")
-            context = fallback_askyourpdf_context(request.message)
+            base_doc_id = session.get("documentId", "doc:unknown")
+            context = fallback_askyourpdf_context(request.message, base_doc_id)
 
         answer = generate_llm_response(request.message, context)
 
@@ -211,78 +229,3 @@ def chat(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         log_user_event("chat", "error", str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
-# MAIN COMBINED ROUTE
-@app.post("/upload/files")
-async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
-    logger.info(f"Uploading {len(files)} files...")
-    clear_user_logs()
-    log_user_event("upload_batch", "start", f"{len(files)} files")
-
-    async def process_file(file: UploadFile):
-        log_user_event("upload_start", "started", file.filename)
-
-        file_bytes = await file.read()
-        ext = file.filename.split(".")[-1]
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        filepath = os.path.join(DOCUMENTS_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(file_bytes)
-
-        base_doc_id = f"doc:{uuid.uuid4().hex}"
-
-        log_user_event("extract_text", "started", file.filename)
-        content = extract_text_from_file(filepath)
-        chunks = chunk_text(content)
-        log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
-
-        async def embed_and_store():
-            log_user_event("embedding", "started")
-            embeddings = embed_text_chunks(chunks)
-            add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
-            log_user_event("embedding", "completed")
-
-        async def upload_to_askyourpdf():
-            ask_doc_id = None
-            log_user_event("askyourpdf_upload", "started")
-            try:
-                response = requests.post(
-                    f"{ASKYOURPDF_BASE_URL}/upload",
-                    headers={"x-api-key": ASKYOURPDF_API_KEY},
-                    files={"file": (file.filename, file_bytes, file.content_type)}
-                )
-                if response.status_code == 201:
-                    ask_doc_id = response.json().get("docId")
-                    log_user_event("askyourpdf_upload", "completed", ask_doc_id)
-                else:
-                    log_user_event("askyourpdf_upload", "failed", response.text)
-            except Exception as e:
-                log_user_event("askyourpdf_upload", "error", str(e))
-            return ask_doc_id
-
-        ask_task = asyncio.create_task(upload_to_askyourpdf())
-        redis_task = asyncio.create_task(embed_and_store())
-        ask_doc_id = await ask_task
-        await redis_task
-
-        metadata_entry = {
-            "documentId": base_doc_id,
-            "documentName": file.filename,
-            "askyourpdfdocId": ask_doc_id
-        }
-
-        update_files_list(metadata_entry)
-        reset_user_session(metadata_entry)
-        log_user_event("session_reset", "completed")
-
-        return len(chunks)
-
-    tasks = [process_file(file) for file in files]
-    chunk_counts = await asyncio.gather(*tasks)
-    total_chunks = sum(chunk_counts)
-
-    log_user_event("upload_batch", "complete", f"{total_chunks} chunks embedded")
-    return {
-        "message": "Files processed for both Redis and AskYourPDF.",
-        "embedded_chunks_count": total_chunks
-    }
