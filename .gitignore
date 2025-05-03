@@ -1,3 +1,11 @@
 user_session.json
 user_logs.jsonl
 files_list.json
+*.pdf
+*.docx
+*.doc
+*.txt
+*.csv
+*.json
+*.pyc 
+__pycache__

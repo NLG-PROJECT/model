@@ -1,4 +1,4 @@
-### PATCHED UPLOAD ENDPOINT WITH PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING ###
+### PATCHED UPLOAD ENDPOINT WITH TRUE PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING ###
 
 import os
 import uuid
@@ -109,6 +109,10 @@ def reset_user_session(new_entry: Dict[str, Any]):
     with open(USER_SESSION_FILE, "w") as f:
         json.dump(session_entry, f, indent=2)
 
+def clear_user_logs():
+    with open(USER_LOG_FILE, "w") as log_file:
+        log_file.write("")
+
 def log_user_event(step: str, status: str, detail: str = ""):
     log_entry = {
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -123,8 +127,8 @@ def log_user_event(step: str, status: str, detail: str = ""):
 @app.post("/upload/files")
 async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     logger.info(f"Uploading {len(files)} files...")
-    askyourpdf_ids = []
-    metadata_entries = []
+    clear_user_logs()
+    log_user_event("upload_batch", "start", f"{len(files)} files")
 
     async def process_file(file: UploadFile):
         log_user_event("upload_start", "started", file.filename)
@@ -143,26 +147,35 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         chunks = chunk_text(content)
         log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
 
-        log_user_event("embedding", "started")
-        embeddings = embed_text_chunks(chunks)
-        add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
-        log_user_event("embedding", "completed")
+        async def embed_and_store():
+            log_user_event("embedding", "started")
+            embeddings = embed_text_chunks(chunks)
+            add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
+            log_user_event("embedding", "completed")
 
-        ask_doc_id = None
-        log_user_event("askyourpdf_upload", "started")
-        try:
-            response = requests.post(
-                f"{ASKYOURPDF_BASE_URL}/api/upload",
-                headers={"x-api-key": ASKYOURPDF_API_KEY},
-                files={"file": (file.filename, file_bytes, file.content_type)}
-            )
-            if response.status_code == 201:
-                ask_doc_id = response.json().get("docId")
-                log_user_event("askyourpdf_upload", "completed", ask_doc_id)
-            else:
-                log_user_event("askyourpdf_upload", "failed", response.text)
-        except Exception as e:
-            log_user_event("askyourpdf_upload", "error", str(e))
+        async def upload_to_askyourpdf():
+            ask_doc_id = None
+            log_user_event("askyourpdf_upload", "started")
+            try:
+                response = requests.post(
+                    f"{ASKYOURPDF_BASE_URL}/api/upload",
+                    headers={"x-api-key": ASKYOURPDF_API_KEY},
+                    files={"file": (file.filename, file_bytes, file.content_type)}
+                )
+                if response.status_code == 201:
+                    ask_doc_id = response.json().get("docId")
+                    log_user_event("askyourpdf_upload", "completed", ask_doc_id)
+                else:
+                    log_user_event("askyourpdf_upload", "failed", response.text)
+            except Exception as e:
+                log_user_event("askyourpdf_upload", "error", str(e))
+            return ask_doc_id
+
+        # Run both Redis and AskYourPDF in parallel
+        ask_task = asyncio.create_task(upload_to_askyourpdf())
+        redis_task = asyncio.create_task(embed_and_store())
+        ask_doc_id = await ask_task
+        await redis_task
 
         metadata_entry = {
             "documentId": base_doc_id,
@@ -180,6 +193,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     chunk_counts = await asyncio.gather(*tasks)
     total_chunks = sum(chunk_counts)
 
+    log_user_event("upload_batch", "complete", f"{total_chunks} chunks embedded")
     return {
         "message": "Files processed for both Redis and AskYourPDF.",
         "embedded_chunks_count": total_chunks
