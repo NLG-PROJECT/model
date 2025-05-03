@@ -229,3 +229,191 @@ def chat(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         log_user_event("chat", "error", str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/market-summary")
+def generate_market_summary():
+    try:
+        log_user_event("market_summary", "started")
+        with open(USER_SESSION_FILE, "r") as f:
+            session_data = json.load(f)
+        doc_id = session_data.get("askyourpdfdocId")
+        base_doc_id = session_data.get("documentId")
+
+        if not doc_id:
+            raise HTTPException(status_code=400, detail="Document ID missing in session.")
+
+        headers = {"x-api-key": ASKYOURPDF_API_KEY, "Content-Type": "application/json"}
+        ask_url = f"{ASKYOURPDF_BASE_URL}/chat/{doc_id}?stream=False"
+        request_body = [{"sender": "user", "message": ASK_YOUR_SUMMARY_PROMPT.strip()}]
+        ask_response = requests.post(ask_url, headers=headers, json=request_body)
+
+        if ask_response.status_code != 200:
+            log_user_event("market_summary", "ask_error", ask_response.text)
+            raise HTTPException(status_code=ask_response.status_code, detail="AskYourPDF failed.")
+
+        context = ask_response.json()["answer"]["message"]
+
+        # Save raw response in user session
+        session_data["market_summary"] = context
+        with open(USER_SESSION_FILE, "w") as f:
+            json.dump(session_data, f, indent=2)
+
+        # Train embeddings
+        chunks = chunk_text(context)
+        embeddings = embed_text_chunks(chunks)
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", "askyourpdf_market_summary")
+
+        log_user_event("market_summary", "completed")
+        return {"message": "Market summary generated.", "summary": context}
+
+    except Exception as e:
+        log_user_event("market_summary", "error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/risk-factors")
+def generate_risk_factors():
+    try:
+        log_user_event("risk_factors", "started")
+        with open(USER_SESSION_FILE, "r") as f:
+            session_data = json.load(f)
+        doc_id = session_data.get("askyourpdfdocId")
+        base_doc_id = session_data.get("documentId")
+
+        if not doc_id:
+            raise HTTPException(status_code=400, detail="Document ID missing in session.")
+
+        headers = {"x-api-key": ASKYOURPDF_API_KEY, "Content-Type": "application/json"}
+        ask_url = f"{ASKYOURPDF_BASE_URL}/chat/{doc_id}?stream=False"
+        request_body = [{"sender": "user", "message": ASK_RISK_FACTORS_SUMMARY_PROMPT.strip()}]
+        ask_response = requests.post(ask_url, headers=headers, json=request_body)
+
+        if ask_response.status_code != 200:
+            log_user_event("risk_factors", "ask_error", ask_response.text)
+            raise HTTPException(status_code=ask_response.status_code, detail="AskYourPDF failed.")
+
+        context = ask_response.json()["answer"]["message"]
+
+        # Save in session
+        session_data["risk_factors"] = context
+        with open(USER_SESSION_FILE, "w") as f:
+            json.dump(session_data, f, indent=2)
+
+        # Train embeddings
+        chunks = chunk_text(context)
+        embeddings = embed_text_chunks(chunks)
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", "askyourpdf_risk_factors")
+
+        log_user_event("risk_factors", "completed")
+        return {"message": "Risk factors summary generated.", "summary": context}
+
+    except Exception as e:
+        log_user_event("risk_factors", "error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/summary/market")
+def get_market_summary():
+    try:
+        with open(USER_SESSION_FILE, "r") as f:
+            session_data = json.load(f)
+        if "market_summary" in session_data:
+            return {"message": "Cached market summary.", "summary": session_data["market_summary"]}
+        else:
+            return generate_market_summary()
+    except Exception as e:
+        log_user_event("market_summary", "error", f"Cache check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/summary/risk")
+def get_risk_factors():
+    try:
+        with open(USER_SESSION_FILE, "r") as f:
+            session_data = json.load(f)
+        if "risk_factors" in session_data:
+            return {"message": "Cached risk factors.", "summary": session_data["risk_factors"]}
+        else:
+            return generate_risk_factors()
+    except Exception as e:
+        log_user_event("risk_factors", "error", f"Cache check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/")
+def root():
+    return {"message": "Server is running"}
+
+
+
+
+ASK_YOUR_SUMMARY_PROMPT = """
+You are FinGroq, a financial analyst AI used to produce structured, fluent, and data-driven market summaries from SEC filings.
+
+Your goal is to generate a summary with the following sections (if available):  
+1. Industry Overview  
+2. Competitive Landscape  
+3. Customer Segments  
+4. Revenue Breakdown  
+5. Risks and Challenges  
+6. Geographic Exposure  
+7. Macroeconomic Sensitivity  
+8. Innovation and R&D  
+9. Strategic Initiatives  
+10. ESG and Legal Disclosures
+
+Follow this format:
+- Use markdown-style headers (###) for each section.
+- Write concise, fact-based paragraphs (not bullets).
+- Include figures, percentages, and dollar values.
+- Omit any section if content is not available.
+- Do not add opinions or interpretations.
+
+Example:
+
+### Industry Overview  
+Intel operates in the semiconductor industry, producing microprocessors, chipsets, and SoCs.  
+In 2023, industry growth was driven by AI, edge infrastructure, and demand for customizable chip systems.  
+Risks included high R&D costs and geopolitical instability such as U.S.–China tensions.
+
+### Competitive Landscape  
+Intel competes with AMD, NVIDIA, TSMC, and Qualcomm.  
+The company’s data center market share declined due to ARM-based solutions and GPU acceleration trends.
+
+Use this format and tone. Base your output solely on the document.
+"""
+
+ASK_RISK_FACTORS_SUMMARY_PROMPT = """
+You are FinGroq, a financial analyst AI. Your task is to summarize the material risks disclosed in the Risk Factors section of an SEC filing.
+
+Instructions:
+- Use only the content in the document. Do not add, assume, or infer anything.
+- Structure the summary using these categories if supported:
+  ### Market Risks
+  ### Geopolitical & Macroeconomic Risks
+  ### Operational Risks
+  ### AI & Technology Risks
+  ### Cybersecurity & IP Risks
+  ### Legal & Regulatory Risks
+  ### Environmental Risks
+- Write fluent, concise paragraphs under each heading.
+- Include figures, country names, or impacts when mentioned.
+- Omit any category not directly supported by the document.
+
+Example:
+
+### Market Risks  
+Intel faces growing competition from ARM-based chips and GPUs, which threaten market share across data center and client segments.
+
+### Geopolitical & Macroeconomic Risks  
+Tensions with China, the war in Ukraine, and instability in the Middle East affect trade policy, supply chains, and raise cyberattack risks.
+
+### Operational Risks  
+The IDM 2.0 strategy requires major capital investment. With $50B in debt, delays in foundry scaling may reduce returns.
+
+### Cybersecurity & IP Risks  
+Intel is a frequent target of state-sponsored threats. Breaches risk IP theft, legal exposure, and operational disruption.
+
+Use this format and tone. Base your output solely on the document.
+"""
