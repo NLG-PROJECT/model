@@ -1,4 +1,4 @@
-### PATCHED UPLOAD ENDPOINT WITH TRUE PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING ###
+### PATCHED UPLOAD ENDPOINT WITH TRUE PARALLEL REDIS + ASKYOURPDF FLOW, SESSION AND LOG TRACKING + CHAT FALLBACK HANDLER ###
 
 import os
 import uuid
@@ -123,6 +123,95 @@ def log_user_event(step: str, status: str, detail: str = ""):
     with open(USER_LOG_FILE, "a") as log_file:
         log_file.write(json.dumps(log_entry) + "\n")
 
+def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
+    try:
+        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+        query_embedding = np.array(embeddings.embed_query(prompt)).astype('float32')
+        query = f"*=>[KNN {top_k} @embedding $vector AS score]"
+        params_dict = {"vector": query_embedding.tobytes()}
+        redis_query = redis_client.ft(REDIS_INDEX_NAME).search(
+            redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, top_k).return_fields("chunk", "score"),
+            params_dict
+        )
+        return [doc.chunk for doc in redis_query.docs]
+    except Exception as e:
+        log_user_event("redis_search", "error", str(e))
+        return []
+
+def fallback_askyourpdf_context(prompt: str) -> str:
+    try:
+        with open(USER_SESSION_FILE, "r") as f:
+            session = json.load(f)
+        doc_id = session.get("askyourpdfdocId")
+        chat_history = session.get("chat_history", []) + [{"sender": "user", "message": prompt}]
+        response = requests.post(
+            f"{ASKYOURPDF_BASE_URL}/chat/{doc_id}?stream=False",
+            headers={"x-api-key": ASKYOURPDF_API_KEY, "Content-Type": "application/json"},
+            json=chat_history
+        )
+        return response.json()["answer"]["message"]
+    except Exception as e:
+        log_user_event("askyourpdf_context", "error", str(e))
+        return ""
+
+def generate_llm_response(question: str, context: str) -> str:
+    try:
+        from groq import Groq
+        client = Groq(api_key=GROQ_CLOUD_API_KEY)
+        prompt = (
+            f"You are an AI assistant chatbot that provides detailed and comprehensive answers based on the following context.\n\n"
+            f"Context:\n{context}\n\n"
+            f"User Question:\n{question}\n\n"
+            f"Please provide an in-depth and thorough response."
+        )
+        messages = [
+            {"role": "system", "content": "You are a highly detailed-oriented and thorough assistant."},
+            {"role": "user", "content": prompt},
+        ]
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.65,
+            max_tokens=2048,
+            top_p=0.7,
+            stream=False
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        log_user_event("groq_response", "error", str(e))
+        return ""
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(request: ChatRequest) -> ChatResponse:
+    try:
+        log_user_event("chat", "started", request.message)
+
+        # Load session and history
+        session = json.load(open(USER_SESSION_FILE)) if os.path.exists(USER_SESSION_FILE) else {}
+        chat_history = session.get("chat_history", [])
+        chat_history.append({"sender": "user", "message": request.message})
+
+        similar_chunks = retrieve_similar_chunks(request.message, top_k=5)
+        context = "\n".join(similar_chunks)
+
+        if not context:
+            log_user_event("context", "fallback")
+            context = fallback_askyourpdf_context(request.message)
+
+        answer = generate_llm_response(request.message, context)
+
+        chat_history.append({"sender": "bot", "message": answer})
+        session["chat_history"] = chat_history
+        with open(USER_SESSION_FILE, "w") as f:
+            json.dump(session, f, indent=2)
+
+        log_user_event("chat", "completed")
+        return ChatResponse(response=answer)
+
+    except Exception as e:
+        log_user_event("chat", "error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
 # MAIN COMBINED ROUTE
 @app.post("/upload/files")
 async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
@@ -158,7 +247,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             log_user_event("askyourpdf_upload", "started")
             try:
                 response = requests.post(
-                    f"{ASKYOURPDF_BASE_URL}/api/upload",
+                    f"{ASKYOURPDF_BASE_URL}/upload",
                     headers={"x-api-key": ASKYOURPDF_API_KEY},
                     files={"file": (file.filename, file_bytes, file.content_type)}
                 )
@@ -171,7 +260,6 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 log_user_event("askyourpdf_upload", "error", str(e))
             return ask_doc_id
 
-        # Run both Redis and AskYourPDF in parallel
         ask_task = asyncio.create_task(upload_to_askyourpdf())
         redis_task = asyncio.create_task(embed_and_store())
         ask_doc_id = await ask_task
