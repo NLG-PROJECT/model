@@ -49,7 +49,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 
         try:
             response = requests.post(
-                f"{ASKYOURPDF_BASE_URL}/upload",
+                f"{ASKYOURPDF_BASE_URL}/api/upload",
                 headers=headers,
                 files={"file": (file.filename, file_bytes, file.content_type)}
             )
