@@ -29,6 +29,12 @@ from redis.commands.search.field import VectorField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 from semantic_chunker import SemanticChunker  # Import our new chunker
+from fastapi import Query as FastAPIQuery
+import pdfplumber
+from CQE.chunking.preprocessor import SECFilingPreprocessor
+from CQE.chunking.structure_analyzer import StructureAnalyzer
+import shutil
+
 app = FastAPI(
     title="Document Processing API",
     description="API for processing and embedding documents",
@@ -197,15 +203,23 @@ def add_rich_chunks_to_redis(embeddings: List[np.ndarray], chunks: List[Dict[str
 def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[Dict[str, Any]]:
     embedding = OllamaEmbeddings(model="nomic-embed-text").embed_query(prompt)
     embedding = np.array(embedding).astype('float32')
-    # Placeholder: Replace with your actual Redis vector search logic
-    # This should return the keys/ids of the most similar chunks
-    # For demonstration, we'll just return the first top_k chunks
-    keys = redis_client.keys("chunk:*")[:top_k]
+    # Get all chunk keys
+    keys = redis_client.keys("chunk:*")
     chunks = []
     for key in keys:
         chunk_data = json.loads(redis_client.hget(key, "data"))
         chunks.append(chunk_data)
-    return chunks
+    # Hybrid retrieval: prioritize chunks containing all keywords from the prompt
+    keywords = [w.lower() for w in prompt.split() if len(w) > 2]
+    def has_all_keywords(text):
+        text_l = text.lower()
+        return all(k in text_l for k in keywords)
+    filtered = [c for c in chunks if has_all_keywords(c.get("text", ""))]
+    if filtered:
+        # If any filtered, return top_k of those
+        return filtered[:top_k]
+    # Otherwise, fallback to original (first top_k)
+    return chunks[:top_k]
 
 def generate_llm_response(question: str, context: str) -> str:
     """Generate a response from the LLM using Groq client with streaming."""
@@ -275,6 +289,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     logger.info(f"Received upload request with {len(files)} files.")
     all_chunks = []
     file_sources = []
+    all_tables = []
 
     for idx, file in enumerate(files, 1):
         logger.info(f"Starting to process file {idx}: {file.filename}")
@@ -282,36 +297,92 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             logger.info(f"Saving file {file.filename}...")
             filepath = save_uploaded_file(file)
             logger.info(f"File saved to {filepath}")
-            
-            logger.info(f"Extracting text from {filepath}...")
-            content = extract_text_from_file(filepath)
+
+            # Extract tables using Camelot for PDFs
+            tables = []
+            if filepath.endswith(".pdf"):
+                logger.info(f"Extracting tables from {filepath} using Camelot (stream)...")
+                table_dir = "extracted_tables_json"
+                # Clear the output directory before extraction
+                if os.path.exists(table_dir):
+                    shutil.rmtree(table_dir)
+                os.makedirs(table_dir, exist_ok=True)
+                # Call the table_extractor.py script as a subprocess
+                subprocess.run([
+                    sys.executable, "CQE/chunking/table_extractor.py", filepath, table_dir, "stream", "all"
+                ], check=True)
+                # Collect all JSON files created
+                for fname in os.listdir(table_dir):
+                    if fname.startswith("table_") and fname.endswith(".json"):
+                        json_path = os.path.join(table_dir, fname)
+                        with open(json_path, 'r', encoding='utf-8') as f:
+                            table_data = json.load(f)
+                        table_chunk = {
+                            'text': json.dumps(table_data),
+                            'chunk_type': 'table',
+                            'source': file.filename,
+                            'table_meta': {
+                                'json_path': json_path,
+                                'table_file': fname
+                            }
+                        }
+                        all_chunks.append(table_chunk)
+                        file_sources.append(file.filename)
+                        all_tables.append(json_path)
+                        logger.info(f"Added table chunk from {json_path}")
+
+            # Extract narrative text
+            if filepath.endswith(".pdf"):
+                logger.info(f"Extracting narrative text from {filepath}...")
+                content = extract_text_from_file(filepath)
+            else:
+                logger.info(f"Extracting text from {filepath}...")
+                content = extract_text_from_file(filepath)
+
             logger.info(f"Extracted {len(content)} characters from file")
-            
-            logger.info(f"Chunking text from {file.filename}...")
-            chunks = chunk_text(content)
+
+            # Preprocess narrative text
+            preprocessor = SECFilingPreprocessor()
+            cleaned_text = preprocessor.clean_text(content)
+
+            # Structure analysis (optional, can be expanded)
+            structure_analyzer = StructureAnalyzer()
+            structure_info = structure_analyzer.analyze_structure(cleaned_text)
+            # Optionally, add footnotes/cross-refs as chunks
+            for footnote in structure_info.get('footnotes', []):
+                all_chunks.append({
+                    'text': footnote.get('content', ''),
+                    'chunk_type': 'footnote',
+                    'source': file.filename
+                })
+            # Add cross-references as metadata if needed
+
+            # Chunk narrative text
+            chunks = chunk_text(cleaned_text)
             logger.info(f"Created {len(chunks)} chunks from file {file.filename}")
-            
-            if not chunks:
-                logger.warning(f"No text extracted from file {file.filename}. Skipping.")
+
+            if not chunks and not all_tables:
+                logger.warning(f"No text or tables extracted from file {file.filename}. Skipping.")
                 continue
-            
-            # Add chunks and track their source
+
+            # Add narrative chunks and track their source
             all_chunks.extend(chunks)
             file_sources.extend([file.filename] * len(chunks))
-            logger.info(f"Extracted {len(chunks)} chunks from file {file.filename}.")
+            logger.info(f"Extracted {len(chunks)} narrative chunks from file {file.filename}.")
+
         except Exception as e:
             logger.error(f"Failed to process file {file.filename}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to process file {file.filename}: {str(e)}")
 
     if not all_chunks:
-        logger.error("No text extracted from uploaded files.")
-        raise HTTPException(status_code=400, detail="No text extracted from uploaded files.")
+        logger.error("No text or tables extracted from uploaded files.")
+        raise HTTPException(status_code=400, detail="No text or tables extracted from uploaded files.")
 
     try:
         logger.info(f"Starting to embed {len(all_chunks)} chunks...")
         new_embeddings = embed_rich_chunks(all_chunks)
         logger.info(f"Successfully generated embeddings for {len(new_embeddings)} chunks")
-        
+
         # Add embeddings to Redis with source information
         logger.info("Starting to add embeddings to Redis...")
         for i, (embedding, chunk, source) in enumerate(zip(new_embeddings, all_chunks, file_sources)):
@@ -321,14 +392,15 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             except Exception as e:
                 logger.error(f"Failed to add embedding {i} to Redis: {str(e)}", exc_info=True)
                 continue
-            
+
     except Exception as e:
         logger.error(f"Failed during embedding or Redis operations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to embed and index the uploaded files.")
 
     return {
         "message": "Files processed and embedded successfully.",
-        "embedded_texts_count": len(all_chunks)
+        "embedded_texts_count": len(all_chunks),
+        "extracted_tables_count": len(all_tables)
     }
 
 @app.post("/sitemap")
@@ -719,3 +791,70 @@ def shutdown_event():
 async def test_endpoint():
     logger.info("Test endpoint accessed")
     return {"status": "ok", "message": "Server is running"}
+
+@app.get("/search_chunks")
+async def search_chunks(
+    query: str = FastAPIQuery(..., description="Keywords to search for in chunk text"),
+    max_results: int = FastAPIQuery(10, description="Maximum number of results to return")
+) -> dict:
+    """
+    Search stored chunks by keyword(s) for debugging and verification.
+    Returns chunks containing all keywords (case-insensitive, AND logic).
+    """
+    keywords = [w.lower() for w in query.split() if len(w) > 2]
+    keys = redis_client.keys("chunk:*")
+    results = []
+    for key in keys:
+        chunk_data = json.loads(redis_client.hget(key, "data"))
+        text = chunk_data.get("text", "").lower()
+        if all(k in text for k in keywords):
+            results.append(chunk_data)
+            if len(results) >= max_results:
+                break
+    return {
+        "query": query,
+        "keywords": keywords,
+        "results_count": len(results),
+        "results": results
+    }
+
+def extract_text_and_tables_from_pdf(filepath: str, table_dir: str = "table_extracts") -> dict:
+    """
+    Extracts narrative text and tables from a PDF using pdfplumber.
+    Saves each table as a JSON file in table_extracts/.
+    Returns:
+        {
+            'text': <full narrative text>,
+            'tables': [
+                {
+                    'page': <page_number>,
+                    'table_index': <index_on_page>,
+                    'json_path': <path_to_json>,
+                    'shape': (rows, cols)
+                }, ...
+            ]
+        }
+    """
+    os.makedirs(table_dir, exist_ok=True)
+    text = ""
+    tables = []
+    with pdfplumber.open(filepath) as pdf:
+        for page_num, page in enumerate(pdf.pages, 1):
+            page_text = page.extract_text() or ""
+            text += page_text + "\n"
+            page_tables = page.extract_tables()
+            for t_idx, table in enumerate(page_tables, 1):
+                # Save table as JSON
+                json_path = os.path.join(
+                    table_dir,
+                    f"{os.path.basename(filepath)}_page{page_num}_table{t_idx}.json"
+                )
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(table, f, indent=2)
+                tables.append({
+                    'page': page_num,
+                    'table_index': t_idx,
+                    'json_path': json_path,
+                    'shape': (len(table), len(table[0]) if table else 0)
+                })
+    return {'text': text, 'tables': tables}

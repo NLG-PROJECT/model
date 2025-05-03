@@ -1,0 +1,198 @@
+[
+  {
+    "0": "(\nIn Millions)",
+    "1": "",
+    "2": "Dec 30, 2023",
+    "3": "",
+    "4": "Dec 31, 2022"
+  },
+  {
+    "0": "Changes in projected benefit obligation:",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Beginning projected benefit obligation",
+    "1": "$",
+    "2": "2,705",
+    "3": "$",
+    "4": "4,456"
+  },
+  {
+    "0": "Service cost",
+    "1": "",
+    "2": "36",
+    "3": "",
+    "4": "58"
+  },
+  {
+    "0": "Interest cost",
+    "1": "",
+    "2": "127",
+    "3": "",
+    "4": "91"
+  },
+  {
+    "0": "Actuarial (gain) loss",
+    "1": "",
+    "2": "57",
+    "3": "",
+    "4": "(1,500)"
+  },
+  {
+    "0": "Currency exchange rate changes",
+    "1": "",
+    "2": "38",
+    "3": "",
+    "4": "(233)"
+  },
+  {
+    "0": "Plan settlements",
+    "1": "",
+    "2": "(103)",
+    "3": "",
+    "4": "(96)"
+  },
+  {
+    "0": "Other",
+    "1": "",
+    "2": "(35)",
+    "3": "",
+    "4": "(71)"
+  },
+  {
+    "0": "1",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Ending projected benefit obligation",
+    "1": "",
+    "2": "2,825",
+    "3": "",
+    "4": "2,705"
+  },
+  {
+    "0": "Changes in fair value of plan assets:",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Beginning fair value of plan assets",
+    "1": "",
+    "2": "2,130",
+    "3": "",
+    "4": "2,817"
+  },
+  {
+    "0": "Actual return on plan assets",
+    "1": "",
+    "2": "151",
+    "3": "",
+    "4": "(478)"
+  },
+  {
+    "0": "Currency exchange rate changes",
+    "1": "",
+    "2": "34",
+    "3": "",
+    "4": "(102)"
+  },
+  {
+    "0": "Plan settlements",
+    "1": "",
+    "2": "(103)",
+    "3": "",
+    "4": "(96)"
+  },
+  {
+    "0": "Other",
+    "1": "",
+    "2": "\u2014",
+    "3": "",
+    "4": "(11)"
+  },
+  {
+    "0": "2",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Ending fair value of plan assets",
+    "1": "",
+    "2": "2,212",
+    "3": "",
+    "4": "2,130"
+  },
+  {
+    "0": "Net unfunded status",
+    "1": "$",
+    "2": "613",
+    "3": "$",
+    "4": "575"
+  },
+  {
+    "0": "Amounts recognized in the Consolidated Balance Sheets",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Other long-term assets",
+    "1": "$",
+    "2": "62",
+    "3": "$",
+    "4": "74"
+  },
+  {
+    "0": "Other long-term liabilities",
+    "1": "$",
+    "2": "675",
+    "3": "$",
+    "4": "649"
+  },
+  {
+    "0": "3",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "Accumulated other comprehensive loss (income), before tax",
+    "1": "$",
+    "2": "410",
+    "3": "$",
+    "4": "406"
+  },
+  {
+    "0": "Accumulated benefit obligation",
+    "1": "$",
+    "2": "2,706",
+    "3": "$",
+    "4": "2,507"
+  },
+  {
+    "0": "1",
+    "1": "",
+    "2": "",
+    "3": "",
+    "4": ""
+  },
+  {
+    "0": "",
+    "1": "The projected benefit obligation was approximately 30% in the US and 70% outside of the US as of December 30, 2023 and December 31, 2022.",
+    "2": "",
+    "3": "",
+    "4": ""
+  }
+]

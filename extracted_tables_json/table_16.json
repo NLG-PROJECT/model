@@ -1,0 +1,262 @@
+[
+  {
+    "0": "Open Platforms",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "We aim to deliver open software and hardware platforms with industry-defining standards. Around the globe, companies are building their networks,",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "systems, and solutions on open standards-based platforms. Intel has helped set the stage for this movement, with our historic contributions in developing",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "standards such as CXL, Thunderbolt\u2122, and PCI Express*. We also contributed to the design, build, and validation of open-source products in the industry",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "such as Linux*, Android*, and others. The world's developers constantly innovate and expand the capabilities of these open platforms while increasing their",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "stability, reliability, and security. In addition, microservices have enabled the development of flexible, loosely coupled services that are connected via",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "application programming interfaces to create end-to-end processes. We use industry collaboration, co-engineering, and open-source contributions to",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "accelerate software innovation. Through our oneAPI initiative, developers use a unified language across CPUs, GPUs, and FPGAs that is designed to",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "reduce development time and to enhance productivity. We also deliver a steady stream of open-source code and optimizations that are designed for",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "projects across virtually every platform and usage model. We are committed to co-engineering and jointly designing, building, and validating new products",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "with software industry leaders to accelerate mutual technology advancements and help new software and hardware work better together. Our commitment",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "extends to developers through our developer-first approach based on openness, choice, and trust.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Ultimately, we believe our pivot to a software-defined, silicon-enhanced strategy will enable us to realize value at all layers of the compute stack. This",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "should allow us to continue to monetize foundational and ecosystem-enabling software through hardware sales, limited licensing, and customer-enabling",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "service offerings. Additionally, we are expanding our software portfolio by developing and monetizing software solutions, services, and platforms with SaaS,",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "software subscriptions, and other business models. We are prioritizing three portfolios of offerings for our SaaS and subscription-based software: AI, trust",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "\u00ae",
+    "2": ""
+  },
+  {
+    "0": "and security, and performance optimization. We are also scaling the availability of Intel",
+    "1": "",
+    "2": "Developer Cloud, which is designed to enable developers to learn,"
+  },
+  {
+    "0": "prototype, test, and run their own AI workloads across multiple Intel hardware architectures to experience the competitive performance of Intel platforms",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "and develop their AI software from today\u2019s hardware portfolio to next-generation architectures.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "An open approach and deep engagement with the developer ecosystem are essential to lowering barriers to entry and unlocking AI innovations for",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "developers and customers. We are expediting an open AI software ecosystem that we believe is needed to break down proprietary walls. We offer",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "customers, partners, and developers early access and a rapid path to scale their AI solutions with the Intel Developer Cloud and integrated and scalable",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "hardware and software systems and solutions.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "We believe AI will only be truly accessible to all when its use is ethical and responsible. Partnering with industry leaders, we are working to deliver",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "innovative ecosystem tools and solutions intended to make AI safer and more secure, and help address privacy concerns as AI scales exponentially. We",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "are building platforms and technologies for the convergence of AI and security to help customers confidently secure diverse AI workloads across the data",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "center, cloud, PC, and edge.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Manufacturing at Scale",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "IDM 2.0, the next evolution and expansion of our IDM model, is a differentiated strategy that combines three capabilities:",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Internal factory network. Our global, internal factory network has been foundational to our success, enabling product optimization, improved economics,",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "and supply resilience. We intend to remain a leading developer of process technology and a major manufacturer of semiconductors and will continue to",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "build the majority of our products in our factories.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Strategic use of foundry capacity. We expect to expand our use of third-party foundry manufacturing capacity, which will provide us with increased flexibility",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "and scale to optimize our product roadmaps for cost, performance, schedule, and supply. Our use of foundry capacity will include manufacturing for a range",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "of modular tiles on advanced process technologies.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "Open System Foundry. We are building a world-class foundry business to meet the growing long-term global demand for semiconductors. We plan to",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "differentiate our foundry offerings from those of others through a combination of leading-edge packaging and process technology, committed capacity in the",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "US and Europe available for customers globally, and a world-class IP portfolio that will include x86 cores, as well as other ecosystem IP. The current",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "foundry model enabled explosion of ecosystem innovation at the wafer level. We believe this established model has historically served the industry well, but",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "a new mindset is needed in our new era of chipmaking. As innovation evolves, we see the rack has collapsed into a system and the system has collapsed",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "into an advanced package. We are building out an Open System Foundry that has four components: wafer fabrication, packaging, chiplet standard, and",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "software.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "The Open System Foundry involves engaging with customers at multiple levels, from basic wafer manufacturing to helping define and implement their",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "desired system architectures. We intend to build our customers' silicon designs and deliver full end-to-end customizable products built with our advanced",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "packaging technology.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "We believe our IDM 2.0 strategy enables us to deliver leading process technology and products to meet growing long-term demand using internal and",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "external capacity, while leveraging our core strengths to provide foundry services to others and providing superior capacity, supply resilience, and an",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "advantageous cost structure.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "In the upcoming year, we plan to implement an internal foundry model, where our business units engage with our manufacturing group in an arm's-length",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "fashion, similar to how fabless semiconductor companies engage with external foundries. The model is integral to our IDM 2.0 operational and financial",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "strategies and aims to fully leverage our invested capital while serving a wide variety of chip customers worldwide.",
+    "1": "",
+    "2": ""
+  }
+]

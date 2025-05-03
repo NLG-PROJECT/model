@@ -1,0 +1,277 @@
+[
+  {
+    "0": "3/16/25, 12:33 PM",
+    "1": "intc-20231230",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "",
+    "2": "Table of Contents"
+  },
+  {
+    "0": "",
+    "1": "Mitigation techniques designed to address security vulnerabilities in our products, including software and firmware updates or other preventative measures,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "are not always available on a timely basis\u2014or at all\u2014and at times do not operate as intended or effectively resolve vulnerabilities for all applications. In",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "addition, we are often required to rely on third parties, including hardware, software, and services vendors, as well as our customers and end users, to",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "develop and/or deploy mitigation techniques, and the availability, effectiveness, and performance impact of mitigation techniques can depend solely or in",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "part on the actions of these third parties in determining whether, when, and how to develop and deploy mitigations. Export restrictions may impede our",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "ability to provide updates or patches to customers in certain geographies or that appear on sanctions lists, potentially leaving systems unpatched and open",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "to exploitation. Further, sanctions lists may include third parties with whom we need to interact for coordinated vulnerability disclosure, which may impair",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "our ability to receive information about vulnerabilities and to deliver mitigations for them. We and such third parties make prioritization decisions about",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "which vulnerabilities to address, which can delay, limit, or prevent development or deployment of a mitigation and harm our reputation. Security",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "vulnerabilities and/or mitigation techniques can result in adverse performance or power effects, reboots, system instability or unavailability, loss of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "functionality, data loss or corruption, unpredictable system behavior, decisions by customers and end users to limit or change the applications in which they",
+    "2": ""
+  },
+  {
+    "0": "use our products or product features, and/or the misappropriation of data by third parties.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Security vulnerabilities and any limitations or adverse effects of mitigation techniques can adversely affect our results of operations, financial condition,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "customer relationships, prospects, and reputation in a number of ways, any of which may be material. For example, whether or not vulnerabilities involve",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "attempted or successful exploits, they may result in our incurring significant costs related to developing and deploying updates and mitigations, writing",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "down inventory value, defending against product claims and litigation, responding to regulatory inquiries or actions, paying damages, addressing customer",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "satisfaction considerations, providing product replacements or modifications, or taking other remedial steps with respect to third parties. Adverse publicity",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "about security vulnerabilities or mitigations could damage our reputation with customers or users and reduce demand for our products and services. These",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "effects may be greater to the extent that competing products are not susceptible to the same vulnerabilities or if vulnerabilities can be more effectively",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "mitigated in competing products. Moreover, third parties can release information regarding potential vulnerabilities of our products before mitigations are",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "available, which, in turn, could lead to attempted or successful exploits, adversely affect our ability to introduce mitigations, or otherwise harm our business",
+    "2": ""
+  },
+  {
+    "0": "and reputation.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "We are subject to increasing and evolving cybersecurity threats and privacy risks.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "We face significant and persistent cybersecurity risks due to: the breadth of geographies, networks, and systems we must defend against cybersecurity",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "attacks; the complexity, technical sophistication, value, and widespread use of our systems, products and processes; the attractiveness of our systems,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "products and processes to threat actors (including state-sponsored organizations) seeking to inflict harm on us or our customers; the substantial level of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "harm that could occur to us and our customers were we to suffer impacts of a material cybersecurity incident; and our use of third-party products, services",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "and components. Such an incident, whether or not successful, could result in our incurring significant costs related to, for example, rebuilding our internal",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "systems, writing down inventory value, implementing additional threat protection measures, providing modifications to our products and services, defending",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "against litigation or enforcement proceedings, paying damages, providing customers with incentives to maintain a business relationship with us, or taking",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "other remedial steps with respect to third parties, as well as incurring significant reputational harm. We regularly face attempts by malicious attackers who",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "attempt to gain access to our network or data centers or those of our suppliers, customers, partners, end users, or other third parties; steal proprietary,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "personal, or confidential information related to our business, products, employees, suppliers, or customers; introduce malicious software to our systems or",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "those of our suppliers, customers, partners, end users, or other third parties; interrupt our systems and services or those of our suppliers, customers, or",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "others; or demand ransom to return control of such systems and services. As we grow certain emerging business lines, such as our foundry business and",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "our cloud computing and software-as-a-service offerings, we expect to collect or host significant amounts of highly sensitive customer data, which may",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "increasingly make us a target of attempts to steal or corrupt that data. Individuals and organizations, including malicious hackers, state-sponsored",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "organizations, insider threats including employees and third-party service providers, and intruders into our physical facilities, at times attempt to gain",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "unauthorized access to and/or corrupt the processes used to design and manufacture our hardware products and our associated software and services.",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "We are also a frequent target of attackers that intend to sabotage, compromise, take control of, or otherwise corrupt our manufacturing or other processes,",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "products, and services. In some instances, we, our suppliers, our customers, and the users of our products and services may be unaware of a threat or",
+    "2": ""
+  },
+  {
+    "0": "incident or its magnitude and effects, or we may be unable to timely mitigate the impacts of an incident.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "Cyber attack attempts are increasing in number, magnitude, and technical sophistication, and if successful may expose us and the affected parties to loss",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "or misuse of proprietary or confidential information or disruptions to our business operations, including our manufacturing operations, and could impact our",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "financial results. We expect emerging technologies to contribute to the increasing sophistication of attacks and to lead to new threats. For example, threat",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "actors may leverage emerging AI technologies to develop new hacking tools and attack vectors, exploit vulnerabilities, obscure their activities, and increase",
+    "2": ""
+  },
+  {
+    "0": "the difficulty of threat attribution.",
+    "1": "",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "As a developer of leading-node processes and widely utilized products, we have been, and expect to continue to be, the subject of intense efforts by",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "sophisticated cyber adversaries, including state-sponsored organizations, who seek to compromise our systems, disrupt our operations or those of users of",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "our products, or steal trade secrets. As geopolitical or armed global conflicts escalate, attacks against us, our customers, or our strategic allies may",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "similarly intensify. For example, from 2019 to 2021, we, along with other companies with meaningful operations in Israel, were targets of concerted",
+    "2": ""
+  },
+  {
+    "0": "",
+    "1": "cyberattacks. In the fourth quarter of 2020, our Habana Labs subsidiary\u2019s network was breached in connection with a suspected unsuccessful ransomware",
+    "2": ""
+  },
+  {
+    "0": "attack, resulting in unauthorized third-party access of certain confidential information.",
+    "1": "",
+    "2": ""
+  }
+]

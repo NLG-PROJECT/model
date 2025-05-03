@@ -1,0 +1,146 @@
+[
+  {
+    "0": "Risk Factors and Other Key Information"
+  },
+  {
+    "0": "Risk Factors"
+  },
+  {
+    "0": "The following summarizes the material factors that make an investment in our securities speculative or risky. When any one or more of the following risks"
+  },
+  {
+    "0": "materialize from time to time, our business, reputation, financial condition, cash flows, and results of operations can be materially and adversely affected,"
+  },
+  {
+    "0": "and the trading price of our common stock could decline. These risk factors do not identify all risks that we face; our operations can also be affected by"
+  },
+  {
+    "0": "factors that are not presently known to us or that we currently consider to be immaterial to our operations, or by various risks that are generally applicable"
+  },
+  {
+    "0": "to most companies. Due to risks and uncertainties, known and unknown, our past financial results may not be a reliable indicator of future performance,"
+  },
+  {
+    "0": "and historical trends should not be used to anticipate results or trends in future periods. Refer also to the other information set forth in this Form 10-K,"
+  },
+  {
+    "0": "including in the MD&A and Financial Statements and Supplemental Details sections."
+  },
+  {
+    "0": "We are in a highly competitive and rapidly changing industry."
+  },
+  {
+    "0": "The industry in which we operate is highly competitive and subject to rapid technological, geopolitical, and market developments; changes in industry"
+  },
+  {
+    "0": "standards; changes in customer and end-user needs, expectations, and preferences; and frequent product introductions and improvements. When we do"
+  },
+  {
+    "0": "not anticipate or respond to these developments, our competitive position can weaken, and our products or technologies can become uncompetitive or"
+  },
+  {
+    "0": "obsolete. Our competitive environment has intensified in recent years, and we expect it to continue to do so in the future. If we are not able to compete"
+  },
+  {
+    "0": "effectively, or if our foundry strategy is unsuccessful, our financial results will be adversely affected, including through reduced revenue and gross margin,"
+  },
+  {
+    "0": "and we may be required to accelerate the write-down of the value of certain assets."
+  },
+  {
+    "0": "We face intense competition across our product portfolio. Our competitors include companies offering platform products, such as AMD and Qualcomm;"
+  },
+  {
+    "0": "accelerator products such as GPUs, including those offered by NVIDIA; other accelerator products such as ASICs, application-specific standard products,"
+  },
+  {
+    "0": "and FPGAs; memory and storage products; connectivity and networking products; and other semiconductor products. Some of these competitors have"
+  },
+  {
+    "0": "developed or utilize competing computing architectures and platforms, such as the ARM architecture*, and these architectures and platforms can produce"
+  },
+  {
+    "0": "beneficial network effects for competitors when an ecosystem of customers and application developers for such architectures and platforms grows at scale."
+  },
+  {
+    "0": "For example, ARM-based products are being used in PCs and servers, which could lead to further development and growth of the ARM ecosystem. We"
+  },
+  {
+    "0": "also compete with internally developed semiconductors from OEMs, cloud service providers, and others, some of whom are customers. Some of these"
+  },
+  {
+    "0": "customers vertically integrate their own semiconductor designs with their software assets and/or customize their designs for specific computing workloads."
+  },
+  {
+    "0": "For example, in 2020, Apple introduced PC products utilizing its own internally developed ARM-based semiconductor designs in place of our client CPUs,"
+  },
+  {
+    "0": "and we face increasing competition from Apple's products and ecosystem."
+  },
+  {
+    "0": "Most of our competitors rely on third-party foundries, such as TSMC or Samsung, for the manufacture and assembly and test of their semiconductor"
+  },
+  {
+    "0": "components and products. Manufacturing process and assembly and test improvements introduced by such foundries have contributed, and may continue"
+  },
+  {
+    "0": "to contribute, to increasingly competitive offerings by our competitors. Our process technology roadmap to regain transistor performance and power"
+  },
+  {
+    "0": "performance leadership by 2025 is subject to a number of risks, and we could fail to realize our goals, including due to changes in competitor technology"
+  },
+  {
+    "0": "roadmaps, changes affecting our projections regarding our technology or competing technology, and the risks described in the risk factor \"The development"
+  },
+  {
+    "0": "and implementation of new semiconductor products and manufacturing technologies are subject to many risks and uncertainties.\" As an IDM, we have"
+  },
+  {
+    "0": "higher capital expenditures and R&D spending than many of our fabless competitors due to the high ongoing investments required to maintain leading-"
+  },
+  {
+    "0": "edge process technology and manufacturing capacity. We also face new sources of competition as a result of changes in industry participants through, for"
+  },
+  {
+    "0": "example, acquisitions or business collaborations, as well as new entrants, including in China, which could have a significant impact on our competitive"
+  },
+  {
+    "0": "position. For example, we could face increased competition as a result of China's programs to promote a domestic semiconductor industry and supply"
+  },
+  {
+    "0": "chains."
+  },
+  {
+    "0": "Our products compete based on a number of factors, including performance, energy efficiency, ease-of-integration, ease-of-use, innovative design,"
+  },
+  {
+    "0": "features, workload optimization, price, quality, reliability, security, software ecosystem and developer support, time-to-market, reliable product roadmap"
+  },
+  {
+    "0": "execution, brand recognition, customer support and customization, and availability. The importance of these factors varies by product and market segment."
+  },
+  {
+    "0": "To the extent our products do not meet our customers' requirements across these factors in an increasingly competitive landscape, our business and"
+  },
+  {
+    "0": "results of operations can be harmed. Introduction of competitive new products and technologies, aggressive pricing, and other actions taken by competitors"
+  },
+  {
+    "0": "can harm demand for our products, exert downward pricing pressure on our products, and adversely affect our business. For example, our competitors"
+  },
+  {
+    "0": "have introduced data center and client platform products with performance improvements and additional processor core counts that have contributed to an"
+  },
+  {
+    "0": "increasingly competitive environment. Further, our DCAI revenue, platform ASPs and market share were negatively impacted by the competitive"
+  },
+  {
+    "0": "environment and the shift of customer spend towards GPUs during the past few years. Additionally, a number of business combinations and strategic"
+  },
+  {
+    "0": "partnerships in the semiconductor industry have occurred in recent years, and more could occur in the future. Consolidation could also lead to fewer"
+  },
+  {
+    "0": "customers, partners, or suppliers, any of which could negatively affect our financial results."
+  }
+]
