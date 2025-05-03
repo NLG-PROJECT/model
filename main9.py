@@ -165,7 +165,7 @@ def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
             fallback_chunks = chunk_text(context)
             fallback_embeddings = embed_text_chunks(fallback_chunks)
             fallback_base = f"{base_doc_id}:askfallback"
-            add_embeddings_to_redis(fallback_embeddings, fallback_chunks, fallback_base, source="askyourpdf_fallback")
+            add_embeddings_to_redis(fallback_embeddings, fallback_chunks, fallback_base, source="askyourpdf_chat_fallback")
 
         return context
     except Exception as e:
@@ -199,6 +199,82 @@ def generate_llm_response(question: str, context: str) -> str:
     except Exception as e:
         log_user_event("groq_response", "error", str(e))
         return ""
+
+# MAIN COMBINED ROUTE
+@app.post("/upload/files")
+async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
+    logger.info(f"Uploading {len(files)} files...")
+    clear_user_logs()
+    log_user_event("upload_batch", "start", f"{len(files)} files")
+
+    async def process_file(file: UploadFile):
+        log_user_event("upload_start", "started", file.filename)
+
+        file_bytes = await file.read()
+        ext = file.filename.split(".")[-1]
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(DOCUMENTS_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(file_bytes)
+
+        base_doc_id = f"doc:{uuid.uuid4().hex}"
+
+        log_user_event("extract_text", "started", file.filename)
+        content = extract_text_from_file(filepath)
+        chunks = chunk_text(content)
+        log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
+
+        async def embed_and_store():
+            log_user_event("embedding", "started")
+            embeddings = embed_text_chunks(chunks)
+            add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
+            log_user_event("embedding", "completed")
+
+        async def upload_to_askyourpdf():
+            ask_doc_id = None
+            log_user_event("askyourpdf_upload", "started")
+            try:
+                response = requests.post(
+                    f"{ASKYOURPDF_BASE_URL}/api/upload",
+                    headers={"x-api-key": ASKYOURPDF_API_KEY},
+                    files={"file": (file.filename, file_bytes, file.content_type)}
+                )
+                if response.status_code == 201:
+                    ask_doc_id = response.json().get("docId")
+                    log_user_event("askyourpdf_upload", "completed", ask_doc_id)
+                else:
+                    log_user_event("askyourpdf_upload", "failed", response.text)
+            except Exception as e:
+                log_user_event("askyourpdf_upload", "error", str(e))
+            return ask_doc_id
+
+        # Run both Redis and AskYourPDF in parallel
+        ask_task = asyncio.create_task(upload_to_askyourpdf())
+        redis_task = asyncio.create_task(embed_and_store())
+        ask_doc_id = await ask_task
+        await redis_task
+
+        metadata_entry = {
+            "documentId": base_doc_id,
+            "documentName": file.filename,
+            "askyourpdfdocId": ask_doc_id
+        }
+
+        update_files_list(metadata_entry)
+        reset_user_session(metadata_entry)
+        log_user_event("session_reset", "completed")
+
+        return len(chunks)
+
+    tasks = [process_file(file) for file in files]
+    chunk_counts = await asyncio.gather(*tasks)
+    total_chunks = sum(chunk_counts)
+
+    log_user_event("upload_batch", "complete", f"{total_chunks} chunks embedded")
+    return {
+        "message": "Files processed for both Redis and AskYourPDF.",
+        "embedded_chunks_count": total_chunks
+    }
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
@@ -259,10 +335,10 @@ def generate_market_summary():
         with open(USER_SESSION_FILE, "w") as f:
             json.dump(session_data, f, indent=2)
 
-        # Train embeddings
+        # Train embeddings with annotation
         chunks = chunk_text(context)
         embeddings = embed_text_chunks(chunks)
-        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", "askyourpdf_market_summary")
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", annotation="askyourpdf_market_summary")
 
         log_user_event("market_summary", "completed")
         return {"message": "Market summary generated.", "summary": context}
@@ -300,10 +376,10 @@ def generate_risk_factors():
         with open(USER_SESSION_FILE, "w") as f:
             json.dump(session_data, f, indent=2)
 
-        # Train embeddings
+        # Train embeddings with annotation
         chunks = chunk_text(context)
         embeddings = embed_text_chunks(chunks)
-        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", "askyourpdf_risk_factors")
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", annotation="askyourpdf_risk_factors")
 
         log_user_event("risk_factors", "completed")
         return {"message": "Risk factors summary generated.", "summary": context}
