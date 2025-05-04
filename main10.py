@@ -17,6 +17,7 @@ import logging
 import sys
 import redis
 import asyncio
+import concurrent.futures
 from datetime import datetime
 from redis.commands.search.field import VectorField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
@@ -77,32 +78,43 @@ class FactCheckRequest(BaseModel):
 
 
 # Utils
-def extract_text_from_file(filepath: str) -> str:
+### TEXT EXTRACTION (Parallel with ThreadPool) <<< UPDATED >>>
+### TEXT EXTRACTION (Parallel with ThreadPool + page number logging) <<< UPDATED >>>
+def extract_text_from_file(filepath: str) -> List[tuple[str, int]]:
     if filepath.endswith(".pdf"):
-        with pdfplumber.open(filepath) as pdf:
-            return "\n".join([page.extract_text() or "" for page in pdf.pages])
+        reader = PdfReader(filepath)
+        return [(page.extract_text(), i + 1) for i, page in enumerate(reader.pages) if page.extract_text()]
     elif filepath.endswith(".docx"):
         doc = Document(filepath)
-        return " ".join([p.text for p in doc.paragraphs])
+        return [(p.text, 1) for p in doc.paragraphs if p.text.strip()]
     else:
         raise ValueError("Unsupported file format")
-    
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
-    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
+### EMBEDDING UTILS
 
-def embed_text_chunks(text_chunks: List[str]) -> List[np.ndarray]:
+def chunk_text(pages: list[tuple[str, int]], chunk_size: int = 500, overlap: int = 50) -> List[tuple[str, int]]:
+    chunks = []
+    for text, page in pages:
+        for i in range(0, len(text), chunk_size - overlap):
+            chunk = text[i:i + chunk_size]
+            if chunk.strip():
+                chunks.append((chunk, page))
+    return chunks
+
+def embed_text_chunks(text_chunks: list[tuple[str, int]]) -> List[np.ndarray]:
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    chunk_embeddings = embeddings.embed_documents(text_chunks)
-    return [np.array(embedding).astype('float32') for embedding in chunk_embeddings]
+    texts_only = [chunk for chunk, _ in text_chunks]
+    return [np.array(e).astype('float32') for e in embeddings.embed_documents(texts_only)]
 
-def add_embeddings_to_redis(embeddings: List[np.ndarray], chunks: List[str], base_doc_id: str, source: str):
-    for i, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
+def add_embeddings_to_redis(embeddings: list[np.ndarray], chunks: List[tuple[str, int]], base_doc_id: str, source: str):
+    for i, ((chunk, page), embedding) in enumerate(zip(chunks, embeddings)):
         doc_id = f"{base_doc_id}:chunk:{i}"
         redis_client.hset(doc_id, mapping={
             "chunk": chunk,
+            "page": page,
             "source": source,
             "embedding": embedding.tobytes()
         })
+
 
 def update_files_list(new_entry: Dict[str, Any]):
     if os.path.exists(FILES_LIST_PATH):
@@ -177,7 +189,7 @@ def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
         similarity = cosine_similarity(prompt_vector, fallback_vector)
 
         if similarity >= SIMILARITY_THRESHOLD:
-            fallback_chunks = chunk_text(context)
+            fallback_chunks = chunk_text([(context, -1)])
             fallback_embeddings = embed_text_chunks(fallback_chunks)
             fallback_base = f"{base_doc_id}:askfallback"
             add_embeddings_to_redis(fallback_embeddings, fallback_chunks, fallback_base, source="askyourpdf_chat_fallback")
@@ -241,9 +253,10 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
 
         # ✅ Save raw content for fact checking
-        raw_file_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_raw.txt")
-        with open(raw_file_path, "w", encoding="utf-8") as raw_file:
-            raw_file.write(content)
+        raw_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_raw.txt")
+        with open(raw_path, "w", encoding="utf-8") as rf:
+            for text, page in content:
+                rf.write(f"[PAGE {page}]\n{text}\n\n")
 
         async def embed_and_store():
             log_user_event("embedding", "started")
@@ -358,7 +371,7 @@ def generate_market_summary():
             json.dump(session_data, f, indent=2)
 
         # Train embeddings with annotation
-        chunks = chunk_text(context)
+        chunks = chunk_text([(context, -1)])
         embeddings = embed_text_chunks(chunks)
         add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", annotation="askyourpdf_market_summary")
 
@@ -399,7 +412,7 @@ def generate_risk_factors():
             json.dump(session_data, f, indent=2)
 
         # Train embeddings with annotation
-        chunks = chunk_text(context)
+        chunks = chunk_text([(context, -1)])
         embeddings = embed_text_chunks(chunks)
         add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", annotation="askyourpdf_risk_factors")
 

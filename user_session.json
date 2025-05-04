@@ -1,5 +1,5 @@
 {
-  "documentId": "doc:ef1b7f5411214a0b95c3e80b6ed613e3",
+  "documentId": "doc:d4779ca7401e4110900c8af0dd32930f",
   "documentName": "intc-20231230.pdf",
   "askyourpdfdocId": "a9a14190-83f4-4a29-85b0-24084dedc07e",
   "chat_history": [
@@ -9,8 +9,8 @@
     },
     {
       "sender": "bot",
-      "message": "Current income taxes receivable: $59 million\nLong-term income taxes payable: $2.6 billion\n\nNet income tax for 2023 is not explicitly stated, but the company's benefit from income taxes increased in 2023 due to a higher proportion of income being taxed in non-US jurisdictions."
+      "message": "Current income taxes receivable: $59 million\nLong-term income taxes payable: $2.6 billion\n\nNet income tax for 2023 is not directly stated, but the company has a net tax payable of $2.541 billion ($2.6 billion - $59 million)."
     }
   ],
-  "timestamp": "2025-05-03T22:23:09.551539Z"
+  "timestamp": "2025-05-04T04:48:51.210347Z"
 }
