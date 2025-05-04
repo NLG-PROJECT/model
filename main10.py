@@ -529,6 +529,10 @@ def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
 def fact_check(request: FactCheckRequest):
     return fact_check_answer(request.statement)
 
+@app.post("/old-fact-check")
+def old_fact_check(request: FactCheckRequest):
+    return old_fact_check_answer(request.statement)
+
 @app.get("/")
 def root():
     return {"message": "Server is running"}
