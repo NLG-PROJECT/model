@@ -24,6 +24,8 @@ import pdfplumber
 import nltk
 from nltk.tokenize import PunktSentenceTokenizer
 import faiss
+from redis.commands.search.field import VectorField, TextField, NumericField
+from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 
 # Caches FAISS index to user session for fact checking
 FAISS_CACHE = {}
@@ -63,6 +65,28 @@ punkt_tokenizer = PunktSentenceTokenizer()
 # Redis init
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=False)
 
+
+def ensure_redis_index():
+    try:
+        redis_client.ft(REDIS_INDEX_NAME).info()
+    except:
+        schema = (
+            TextField("chunk"),
+            TextField("source"),
+            NumericField("page"),
+            VectorField("embedding", "FLAT", {
+                "TYPE": "FLOAT32",
+                "DIM": EMBEDDING_DIMENSION,
+                "DISTANCE_METRIC": "COSINE"
+            })
+        )
+        redis_client.ft(REDIS_INDEX_NAME).create_index(
+            schema,
+            definition=IndexDefinition(prefix=["doc:"], index_type=IndexType.HASH)
+        )
+        print("✅ Redis vector index created")
+
+ensure_redis_index()
 # Logger setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
@@ -167,15 +191,45 @@ def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
         query = f"*=>[KNN {top_k} @embedding $vector AS score]"
         params_dict = {"vector": query_embedding.tobytes()}
         redis_query = redis_client.ft(REDIS_INDEX_NAME).search(
-            redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, top_k).return_fields("chunk", "score"),
+            redis.commands.search.query.Query(query)
+            .dialect(2)
+            .sort_by("score")
+            .paging(0, top_k)
+            .return_fields("chunk", "score"),
             params_dict
         )
         results = redis_query.docs
-        good_chunks = [doc.chunk for doc in results if float(doc.score) <= SIMILARITY_THRESHOLD]
+        good_chunks = []
+        for doc in results:
+            chunk = getattr(doc, "chunk", None)
+            score = float(getattr(doc, "score", 1.0))
+            if chunk is not None and score <= SIMILARITY_THRESHOLD:
+                good_chunks.append(chunk)
+        log_user_event("retrieve_similar_chunks", "completed", f"{len(good_chunks)} chunks, good_chunks: {good_chunks} ")
         return good_chunks
+   
     except Exception as e:
         log_user_event("redis_search", "error", str(e))
         return []
+
+
+# def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
+#     try:
+#         embeddings = OllamaEmbeddings(model="nomic-embed-text")
+#         query_embedding = np.array(embeddings.embed_query(prompt)).astype('float32')
+#         query = f"*=>[KNN {top_k} @embedding $vector AS score]"
+#         params_dict = {"vector": query_embedding.tobytes()}
+#         redis_query = redis_client.ft(REDIS_INDEX_NAME).search(
+#             redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, top_k).return_fields("chunk", "score"),
+#             params_dict
+#         )
+#         results = redis_query.docs
+#         print(results)
+#         good_chunks = [doc.chunk for doc in results if float(doc.score) <= SIMILARITY_THRESHOLD]
+#         return good_chunks
+#     except Exception as e:
+#         log_user_event("redis_search", "error", str(e))
+#         return []
 
 def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
     try:
@@ -256,6 +310,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         log_user_event("extract_text", "started", file.filename)
         content = extract_text_from_file(filepath)
         chunks = chunk_text(content)
+        print(chunks, "chunks")
         log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
 
         # ✅ Save raw content for fact checking
@@ -295,6 +350,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 
               # FAISS Sentence Indexing (replaces Redis indexing)
         async def index_with_faiss():
+            log_user_event("faiss_indexing", "started")
             sentence_page_map = []
             for text, page in content:
                 for sentence in punkt_tokenizer.tokenize(text):
@@ -316,26 +372,38 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 "index": index,
                 "sentences": sentence_page_map
             }
+             
+            index_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_index.faiss")
+            faiss.write_index(index, index_path)
+
+            # Save sentence map for fallback
+            sentence_map_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_sentences.json")
+            with open(sentence_map_path, "w") as f:
+                json.dump(sentence_page_map, f, indent=2)
+
+
             log_user_event("faiss_indexing", "completed", f"{len(sentences)} sentences")
 
+        metadata_entry = {
+            "documentId": base_doc_id,
+            "documentName": file.filename,
+            "askyourpdfdocId": None
+        }
 
+        update_files_list(metadata_entry)
+        reset_user_session(metadata_entry)
+        log_user_event("session_reset", "completed")
         task_embed = asyncio.create_task(embed_and_store())
         task_ask = asyncio.create_task(upload_to_askyourpdf())
         task_index = asyncio.create_task(index_with_faiss())
 
         ask_doc_id = await task_ask
         await asyncio.gather(task_embed, task_index)
-
-       
-        metadata_entry = {
-            "documentId": base_doc_id,
-            "documentName": file.filename,
-            "askyourpdfdocId": ask_doc_id
-        }
-
-        update_files_list(metadata_entry)
-        reset_user_session(metadata_entry)
-        log_user_event("session_reset", "completed")
+        if ask_doc_id:
+            session_data = json.load(open(USER_SESSION_FILE))
+            session_data["askyourpdfdocId"] = ask_doc_id
+            with open(USER_SESSION_FILE, "w") as f:
+                json.dump(session_data, f, indent=2)
 
         return len(chunks)
 
@@ -412,7 +480,8 @@ def generate_market_summary():
         # Train embeddings with annotation
         chunks = chunk_text([(context, -1)])
         embeddings = embed_text_chunks(chunks)
-        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", annotation="askyourpdf_market_summary")
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:market_summary", source="askyourpdf_market_summary")
+
 
         log_user_event("market_summary", "completed")
         return {"message": "Market summary generated.", "summary": context}
@@ -453,7 +522,8 @@ def generate_risk_factors():
         # Train embeddings with annotation
         chunks = chunk_text([(context, -1)])
         embeddings = embed_text_chunks(chunks)
-        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", annotation="askyourpdf_risk_factors")
+        add_embeddings_to_redis(embeddings, chunks, f"{base_doc_id}:risk_factors", source="askyourpdf_risk_factors")
+
 
         log_user_event("risk_factors", "completed")
         return {"message": "Risk factors summary generated.", "summary": context}
@@ -685,8 +755,20 @@ def fact_check(request: FactCheckRequest):
     if not base_doc_id:
         return {"error": "No document ID."}
 
+       # Try in-memory cache first
     if base_doc_id not in FAISS_CACHE:
-        return {"error": "No FAISS index found. Please upload again."}
+        index_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_index.faiss")
+        sentences_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_sentences.json")
+        if os.path.exists(index_path) and os.path.exists(sentences_path):
+            index = faiss.read_index(index_path)
+            with open(sentences_path, "r") as f:
+                sentence_page_map = json.load(f)
+            FAISS_CACHE[base_doc_id] = {
+                "index": index,
+                "sentences": sentence_page_map
+            }
+        else:
+            return {"error": "No FAISS index found. Please upload again."}
 
     tokenizer = PunktSentenceTokenizer()
     claims = tokenizer.tokenize(request.statement)
@@ -716,6 +798,7 @@ def fact_check(request: FactCheckRequest):
 
     return {"fact_check": results}
 
+
 @app.get("/debug/faiss-status")
 def debug_faiss_status():
     return {"cached_docs": list(FAISS_CACHE.keys())}
@@ -727,6 +810,13 @@ def debug_faiss_sentences(doc_id: str):
     return {"sentences": FAISS_CACHE[doc_id]["sentences"][:5]}  # preview first 5
 
 
+def save_faiss_to_session(sentence_page_map: List[tuple[str, int]], dim: int):
+    session_data = json.load(open(USER_SESSION_FILE))
+    session_data["faiss_sentences"] = sentence_page_map
+    session_data["faiss_dim"] = dim
+    with open(USER_SESSION_FILE, "w") as f:
+        json.dump(session_data, f, indent=2)
+        
 def index_sentences_for_fact_checking(pages: List[tuple[str, int]], base_doc_id: str):
     import logging
     logger = logging.getLogger("FactCheck")
