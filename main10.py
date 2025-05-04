@@ -455,7 +455,7 @@ def get_risk_factors():
 
 ### FACT CHECKER
 
-def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
+def old_fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
     from nltk.tokenize import sent_tokenize
     if not os.path.exists(USER_SESSION_FILE): return {"error": "No session."}
     session = json.load(open(USER_SESSION_FILE))
@@ -485,6 +485,44 @@ def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
             "status": "supported" if best_score >= threshold else "unsupported",
             "evidence": best if best_score >= threshold else None
         })
+    return {"fact_check": results}
+
+def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
+    from nltk.tokenize import sent_tokenize
+    if not os.path.exists(USER_SESSION_FILE): return {"error": "No session."}
+    session = json.load(open(USER_SESSION_FILE))
+    base_doc_id = session.get("documentId")
+    if not base_doc_id: return {"error": "No document ID."}
+
+    claims = punkt_tokenizer.tokenize(statement)
+    embed = OllamaEmbeddings(model="nomic-embed-text")
+    claim_vectors = embed.embed_documents(claims)
+
+    results = []
+    for i, vec in enumerate(claim_vectors):
+        query = f"*=>[KNN 1 @embedding $vector AS score]"
+        params_dict = {"vector": np.array(vec, dtype='float32').tobytes()}
+
+        try:
+            redis_query = redis_client.ft(REDIS_INDEX_NAME).search(
+                redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, 1).return_fields("chunk", "page", "score"),
+                params_dict
+            )
+            if redis_query.docs:
+                doc = redis_query.docs[0]
+                score = float(doc.score)
+                results.append({
+                    "claim": claims[i],
+                    "score": score,
+                    "status": "supported" if score >= threshold else "unsupported",
+                    "evidence": doc.chunk if score >= threshold else None,
+                    "page": int(doc.page) if hasattr(doc, 'page') else None
+                })
+            else:
+                results.append({"claim": claims[i], "score": 0.0, "status": "unsupported", "evidence": None})
+        except Exception as e:
+            results.append({"claim": claims[i], "error": str(e)})
+
     return {"fact_check": results}
 
 @app.post("/fact-check")
