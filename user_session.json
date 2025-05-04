@@ -1,16 +1,7 @@
 {
-  "documentId": "doc:d4779ca7401e4110900c8af0dd32930f",
+  "documentId": "doc:56b5c72ddbb04f85a8a41f970a83e10d",
   "documentName": "intc-20231230.pdf",
   "askyourpdfdocId": "a9a14190-83f4-4a29-85b0-24084dedc07e",
-  "chat_history": [
-    {
-      "sender": "user",
-      "message": "what is the net income tax for 2023?"
-    },
-    {
-      "sender": "bot",
-      "message": "Current income taxes receivable: $59 million\nLong-term income taxes payable: $2.6 billion\n\nNet income tax for 2023 is not directly stated, but the company has a net tax payable of $2.541 billion ($2.6 billion - $59 million)."
-    }
-  ],
-  "timestamp": "2025-05-04T04:48:51.210347Z"
+  "chat_history": [],
+  "timestamp": "2025-05-04T09:01:59.265878Z"
 }

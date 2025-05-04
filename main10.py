@@ -19,7 +19,7 @@ import redis
 import asyncio
 import concurrent.futures
 from datetime import datetime
-from redis.commands.search.field import VectorField, TextField
+from redis.commands.search.field import VectorField, TextField, NumericField  # [REDIS SETUP UPDATE]
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 import pdfplumber
 import nltk
@@ -45,6 +45,7 @@ FILES_LIST_PATH = 'files_list.json'
 USER_SESSION_FILE = 'user_session.json'
 USER_LOG_FILE = 'user_logs.jsonl'
 SIMILARITY_THRESHOLD = 0.35
+SECONDARY_INDEX_NAME = "sentences_idx"
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 # Download punkt if not available
@@ -62,6 +63,30 @@ redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASS
 # Logger setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
+
+# [REDIS SETUP UPDATE]
+def create_sentence_index_if_not_exists():
+    try:
+        redis_client.ft(SECONDARY_INDEX_NAME).info()
+    except Exception:
+        redis_client.ft(SECONDARY_INDEX_NAME).create_index(
+            fields=[
+                TextField("sentence"),
+                NumericField("page"),
+                VectorField("embedding", "FLAT", {
+                    "TYPE": "FLOAT32",
+                    "DIM": 768,
+                    "DISTANCE_METRIC": "COSINE",
+                    "INITIAL_CAP": 1000,
+                    "BLOCK_SIZE": 100,
+                }),
+            ],
+            definition=IndexDefinition(prefix=[f"doc:"], index_type=IndexType.HASH)
+        )
+
+@app.on_event("startup")
+async def startup_event():
+    create_sentence_index_if_not_exists()
 
 # Models
 class ChatRequest(BaseModel):
@@ -259,10 +284,15 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 rf.write(f"[PAGE {page}]\n{text}\n\n")
 
         async def embed_and_store():
-            log_user_event("embedding", "started")
-            embeddings = embed_text_chunks(chunks)
-            add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
-            log_user_event("embedding", "completed")
+            try:
+                log_user_event("embedding", "started")
+                embeddings = embed_text_chunks(chunks)
+                add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
+                log_user_event("embedding", "completed")
+            except Exception as e:
+                log_user_event("embedding", "error", str(e))
+
+        # Sentence indexing background process with logging
 
         async def upload_to_askyourpdf():
             ask_doc_id = None
@@ -282,12 +312,24 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 log_user_event("askyourpdf_upload", "error", str(e))
             return ask_doc_id
 
-        # Run Redis and AskYourPDF in parallel
-        ask_task = asyncio.create_task(upload_to_askyourpdf())
-        redis_task = asyncio.create_task(embed_and_store())
-        ask_doc_id = await ask_task
-        await redis_task
+        async def index():
+            try:
+                log_user_event("sentence_indexing", "started")
+                await asyncio.to_thread(index_sentences_for_fact_checking, content, base_doc_id)
+                log_user_event("sentence_indexing", "completed")
+            except Exception as e:
+                log_user_event("sentence_indexing", "error", str(e))
+                logger.error(f"Indexing failed: {e}")
 
+
+        task_embed = asyncio.create_task(embed_and_store())
+        task_ask = asyncio.create_task(upload_to_askyourpdf())
+        task_index = asyncio.create_task(index())
+
+        ask_doc_id = await task_ask
+        await asyncio.gather(task_embed, task_index)
+
+       
         metadata_entry = {
             "documentId": base_doc_id,
             "documentName": file.filename,
@@ -487,43 +529,266 @@ def old_fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, A
         })
     return {"fact_check": results}
 
+@app.get("/debug/sentences")
+def debug_list_indexed_sentences(doc_id: str):
+    import logging
+    logger = logging.getLogger("FactCheck")
+    try:
+        keys = redis_client.keys(f"{doc_id}:sent:*")
+        sentences = []
+        for key in keys:
+            data = redis_client.hgetall(key)
+            sentence = data.get(b"sentence", b"").decode("utf-8")
+            page = data.get(b"page", b"").decode("utf-8")
+            sentences.append({"key": key.decode(), "sentence": sentence, "page": page})
+        logger.info(f"Retrieved {len(sentences)} indexed sentences for {doc_id}.")
+        return {"indexed_sentences": sentences}
+    except Exception as e:
+        logger.error(f"Debug retrieval failed for {doc_id}: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/debug/index-status")
+def debug_index_status(doc_id: str):
+    status = redis_client.get(f"{doc_id}:sentences_indexed")
+    return {"doc_id": doc_id, "status": status.decode("utf-8") if status else None}
+
+@app.get("/debug/schema")
+def debug_schema():
+    try:
+        info = redis_client.ft(SECONDARY_INDEX_NAME).info()
+        return {"index": SECONDARY_INDEX_NAME, "fields": info["attributes"]}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/debug/query-sample")
+def debug_query_sample(query_text: str):
+    from langchain_ollama import OllamaEmbeddings
+    import numpy as np
+    import logging
+    logger = logging.getLogger("FactCheck")
+
+    try:
+        embed = OllamaEmbeddings(model="nomic-embed-text")
+        vector = embed.embed_documents([query_text])[0]  # UPDATED: consistent embedding method
+        np_vector = np.array(vector, dtype='float32')
+        logger.info(f"Query vector: dim={len(vector)}, norm={np.linalg.norm(np_vector):.4f}")
+
+        query = f"*=>[KNN 5 @embedding $vector AS score]"
+        params_dict = {"vector": np_vector.tobytes()}
+
+        redis_query = redis_client.ft(SECONDARY_INDEX_NAME).search(
+            redis.commands.search.query.Query(query)
+            .dialect(2)
+            .paging(0, 5)
+            .return_fields("sentence", "page", "score"),
+            params_dict
+        )
+
+        results = []
+        for doc in redis_query.docs:
+            results.append({
+                "sentence": getattr(doc, "sentence", None),
+                "page": getattr(doc, "page", None),
+                "score": float(doc.score)
+            })
+
+        if not results:
+            logger.warning("No vector results returned for query.")
+
+        return {
+            "query_vector_first_values": vector[:10],
+            "query_vector_norm": float(np.linalg.norm(np_vector)),
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Query sample error: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/debug/redis-vector")
+def debug_redis_vector(doc_id: str, sent_index: int = 0):
+    import numpy as np
+    key = f"{doc_id}:sent:{sent_index}"
+    data = redis_client.hgetall(key)
+    vec_bytes = data.get(b"embedding", None)
+    if not vec_bytes:
+        return {"error": f"No vector found at {key}"}
+    vec = np.frombuffer(vec_bytes, dtype=np.float32)
+    return {
+        "key": key,
+        "dim": vec.shape[0],
+        "first_values": vec[:10].tolist(),
+        "norm": float(np.linalg.norm(vec)),
+        "sum": float(np.sum(vec))
+    }
+
+@app.get("/debug/list-doc-keys")
+def debug_list_doc_keys(doc_id: str):
+    try:
+        keys = redis_client.keys(f"{doc_id}:sent:*")
+        return {"keys": [key.decode() for key in keys]}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/debug/sentence-vector")
+def debug_sentence_vector(text: str):
+    from langchain_ollama import OllamaEmbeddings
+    import numpy as np
+    try:
+        embed = OllamaEmbeddings(model="nomic-embed-text")
+        vec = embed.embed_query(text)
+        return {
+            "dim": len(vec),
+            "first_values": vec[:10],
+            "sum": float(np.sum(vec)),
+            "norm": float(np.linalg.norm(vec))
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    
 def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
-    from nltk.tokenize import sent_tokenize
-    if not os.path.exists(USER_SESSION_FILE): return {"error": "No session."}
+    import logging
+    logger = logging.getLogger("FactCheck")
+    logger.info("Starting fact check...")
+
+    if not os.path.exists(USER_SESSION_FILE):
+        logger.error("No session file found.")
+        return {"error": "No session."}
+
     session = json.load(open(USER_SESSION_FILE))
     base_doc_id = session.get("documentId")
-    if not base_doc_id: return {"error": "No document ID."}
+    if not base_doc_id:
+        logger.error("No document ID in session.")
+        return {"error": "No document ID."}
 
-    claims = punkt_tokenizer.tokenize(statement)
+    status = redis_client.get(f"{base_doc_id}:sentences_indexed")
+    logger.info(f"Index status for {base_doc_id}: {status}")
+
+    if status is None:
+        logger.warning("Sentences not indexed yet.")
+        return {"error": "Sentences not indexed yet. Please retry shortly."}
+    elif status == b"error":
+        logger.warning("Previous indexing failed. Retrying in background...")
+        asyncio.create_task(asyncio.to_thread(index_sentences_for_fact_checking, [], base_doc_id))
+        return {"error": "Sentence indexing previously failed. Retrying in background."}
+
+    from nltk.tokenize import PunktSentenceTokenizer
+    tokenizer = PunktSentenceTokenizer()
+    claims = tokenizer.tokenize(statement)
+    logger.info(f"Tokenized {len(claims)} claims: {claims}")
+
     embed = OllamaEmbeddings(model="nomic-embed-text")
-    claim_vectors = embed.embed_documents(claims)
+    try:
+        claim_vectors = embed.embed_documents(claims)  # UPDATED for consistent embedding
+        logger.info("Generated embeddings for claims.")
+    except Exception as e:
+        logger.error(f"Embedding generation failed: {e}")
+        return {"error": "Embedding failed."}
 
     results = []
     for i, vec in enumerate(claim_vectors):
-        query = f"*=>[KNN 1 @embedding $vector AS score]"
+        query = f"*=>[KNN 3 @embedding $vector AS score]"
         params_dict = {"vector": np.array(vec, dtype='float32').tobytes()}
 
+        logger.info(f"Running Redis vector query for claim {i} with length {len(vec)}.")
+
         try:
-            redis_query = redis_client.ft(REDIS_INDEX_NAME).search(
-                redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, 1).return_fields("chunk", "page", "score"),
+            redis_query = redis_client.ft(SECONDARY_INDEX_NAME).search(
+                redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, 3).return_fields("sentence", "page", "score"),
                 params_dict
             )
-            if redis_query.docs:
-                doc = redis_query.docs[0]
+            logger.info(f"[FactCheck] Retrieved {len(redis_query.docs)} results for claim {i}.")
+
+            best_doc = None
+            best_score = float("inf")
+            for doc in redis_query.docs:
+                logger.info(f"[FactCheck] DocID={doc.id if hasattr(doc, 'id') else 'N/A'}, Score={doc.score}, Sentence={getattr(doc, 'sentence', None)}, Page={getattr(doc, 'page', None)}")
                 score = float(doc.score)
-                results.append({
-                    "claim": claims[i],
-                    "score": score,
-                    "status": "supported" if score >= threshold else "unsupported",
-                    "evidence": doc.chunk if score >= threshold else None,
-                    "page": int(doc.page) if hasattr(doc, 'page') else None
-                })
-            else:
-                results.append({"claim": claims[i], "score": 0.0, "status": "unsupported", "evidence": None})
+                if score < best_score:
+                    best_score = score
+                    best_doc = doc
+
+            results.append({
+                "claim": claims[i],
+                "score": best_score,
+                "status": "supported" if best_score <= threshold else "unsupported",
+                "evidence": getattr(best_doc, 'sentence', None) if best_doc and best_score <= threshold else None,
+                "page": int(getattr(best_doc, 'page', 0)) if best_doc and hasattr(best_doc, 'page') else None
+            })
         except Exception as e:
+            logger.error(f"Redis query failed for claim {i}: {e}")
             results.append({"claim": claims[i], "error": str(e)})
 
+    logger.info("Completed fact check.")
     return {"fact_check": results}
+
+
+def index_sentences_for_fact_checking(pages: List[tuple[str, int]], base_doc_id: str):
+    import logging
+    logger = logging.getLogger("FactCheck")
+    log_user_event("sentence_indexing", "started")
+    try:
+        from nltk.tokenize import PunktSentenceTokenizer
+        tokenizer = PunktSentenceTokenizer()
+
+        logger.info(f"Starting sentence indexing for {base_doc_id} with {len(pages)} pages.")
+
+        all_sentences = []
+        for i, (text, page) in enumerate(pages):
+            if not text.strip():
+                logger.debug(f"Page {page} is empty. Skipping.")
+                continue
+            try:
+                sentences = tokenizer.tokenize(text)
+                logger.info(f"Page {page} has {len(sentences)} sentences.")
+                all_sentences.extend([(s, page) for s in sentences if s.strip()])
+            except Exception as e:
+                logger.error(f"Tokenization failed on page {page}: {e}")
+
+        if not all_sentences:
+            logger.warning("No sentences found after tokenization.")
+            redis_client.set(f"{base_doc_id}:sentences_indexed", "error")
+            return
+
+        texts_only = [s for s, _ in all_sentences]
+        logger.info(f"Total sentences to index: {len(texts_only)}")
+
+        embed = OllamaEmbeddings(model="nomic-embed-text")
+        embeddings = [np.array(e).astype('float32') for e in embed.embed_documents(texts_only)]
+        logger.info("Embeddings generated for all sentences.")
+
+        success_count = 0
+        for i, ((sentence, page), embedding) in enumerate(zip(all_sentences, embeddings)):
+            try:
+                doc_id = f"{base_doc_id}:sent:{i}"
+                redis_client.hset(doc_id, mapping={
+                    "sentence": sentence,
+                    "page": page,
+                    "embedding": embedding.tobytes()
+                })
+                success_count += 1
+            except Exception as e:
+                logger.error(f"Redis insertion failed for sentence {i} on page {page}: {e}")
+
+        redis_client.set(f"{base_doc_id}:sentences_indexed", "success")
+        logger.info(f"Sentence indexing completed successfully. {success_count}/{len(all_sentences)} sentences indexed.")
+        log_user_event("sentence_indexing", "completed")
+    except Exception as e:
+        redis_client.set(f"{base_doc_id}:sentences_indexed", "error")
+        logger.error(f"Sentence indexing failed: {e}")
+        log_user_event("sentence_indexing", "error", str(e))
+
+@app.get("/")
+def root():
+    return {"message": "DocuGroq server running"}
+
+
+@app.post("/fact-check")
+def fact_check(request: FactCheckRequest):
+    return fact_check_answer(request.statement)
+
+
 
 @app.post("/fact-check")
 def fact_check(request: FactCheckRequest):
