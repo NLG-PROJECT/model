@@ -12,6 +12,6 @@ groq
 numpy
 redis
 typing-extensions
-phi-agent
+# phi-agent
 httpx
 openai>=1.0.0

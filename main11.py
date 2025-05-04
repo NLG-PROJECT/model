@@ -20,10 +20,13 @@ import asyncio
 import concurrent.futures
 from datetime import datetime
 from redis.commands.search.field import VectorField, TextField, NumericField  # [REDIS SETUP UPDATE]
-from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 import pdfplumber
 import nltk
 from nltk.tokenize import PunktSentenceTokenizer
+import faiss
+
+# Caches FAISS index to user session for fact checking
+FAISS_CACHE = {}
 
 app = FastAPI()
 
@@ -64,29 +67,7 @@ redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASS
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 
-# [REDIS SETUP UPDATE]
-def create_sentence_index_if_not_exists():
-    try:
-        redis_client.ft(SECONDARY_INDEX_NAME).info()
-    except Exception:
-        redis_client.ft(SECONDARY_INDEX_NAME).create_index(
-            fields=[
-                TextField("sentence"),
-                NumericField("page"),
-                VectorField("embedding", "FLAT", {
-                    "TYPE": "FLOAT32",
-                    "DIM": 768,
-                    "DISTANCE_METRIC": "COSINE",
-                    "INITIAL_CAP": 1000,
-                    "BLOCK_SIZE": 100,
-                }),
-            ],
-            definition=IndexDefinition(prefix=[f"doc:"], index_type=IndexType.HASH)
-        )
 
-@app.on_event("startup")
-async def startup_event():
-    create_sentence_index_if_not_exists()
 
 # Models
 class ChatRequest(BaseModel):
@@ -312,19 +293,35 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 log_user_event("askyourpdf_upload", "error", str(e))
             return ask_doc_id
 
-        async def index():
-            try:
-                log_user_event("sentence_indexing", "started")
-                await asyncio.to_thread(index_sentences_for_fact_checking, content, base_doc_id)
-                log_user_event("sentence_indexing", "completed")
-            except Exception as e:
-                log_user_event("sentence_indexing", "error", str(e))
-                logger.error(f"Indexing failed: {e}")
+              # FAISS Sentence Indexing (replaces Redis indexing)
+        async def index_with_faiss():
+            sentence_page_map = []
+            for text, page in content:
+                for sentence in punkt_tokenizer.tokenize(text):
+                    sentence_page_map.append((sentence.strip(), page))
+
+            if not sentence_page_map:
+                raise ValueError("No sentences found for FAISS indexing")
+
+            sentences = [s for s, _ in sentence_page_map]
+            embed = OllamaEmbeddings(model="nomic-embed-text")
+            vectors = embed.embed_documents(sentences)
+            matrix = np.array(vectors).astype("float32")
+            faiss.normalize_L2(matrix)
+            index = faiss.IndexFlatIP(len(matrix[0]))
+            index.add(matrix)
+
+            # Cache in memory
+            FAISS_CACHE[base_doc_id] = {
+                "index": index,
+                "sentences": sentence_page_map
+            }
+            log_user_event("faiss_indexing", "completed", f"{len(sentences)} sentences")
 
 
         task_embed = asyncio.create_task(embed_and_store())
         task_ask = asyncio.create_task(upload_to_askyourpdf())
-        task_index = asyncio.create_task(index())
+        task_index = asyncio.create_task(index_with_faiss())
 
         ask_doc_id = await task_ask
         await asyncio.gather(task_embed, task_index)
@@ -674,81 +671,60 @@ def debug_sentence_vector(text: str):
     except Exception as e:
         return {"error": str(e)}
     
-def fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
+@app.post("/fact-check")
+def fact_check(request: FactCheckRequest):
     import logging
     logger = logging.getLogger("FactCheck")
-    logger.info("Starting fact check...")
+    logger.info("Starting FAISS fact check...")
 
     if not os.path.exists(USER_SESSION_FILE):
-        logger.error("No session file found.")
         return {"error": "No session."}
 
     session = json.load(open(USER_SESSION_FILE))
     base_doc_id = session.get("documentId")
     if not base_doc_id:
-        logger.error("No document ID in session.")
         return {"error": "No document ID."}
 
-    status = redis_client.get(f"{base_doc_id}:sentences_indexed")
-    logger.info(f"Index status for {base_doc_id}: {status}")
+    if base_doc_id not in FAISS_CACHE:
+        return {"error": "No FAISS index found. Please upload again."}
 
-    if status is None:
-        logger.warning("Sentences not indexed yet.")
-        return {"error": "Sentences not indexed yet. Please retry shortly."}
-    elif status == b"error":
-        logger.warning("Previous indexing failed. Retrying in background...")
-        asyncio.create_task(asyncio.to_thread(index_sentences_for_fact_checking, [], base_doc_id))
-        return {"error": "Sentence indexing previously failed. Retrying in background."}
-
-    from nltk.tokenize import PunktSentenceTokenizer
     tokenizer = PunktSentenceTokenizer()
-    claims = tokenizer.tokenize(statement)
-    logger.info(f"Tokenized {len(claims)} claims: {claims}")
-
+    claims = tokenizer.tokenize(request.statement)
     embed = OllamaEmbeddings(model="nomic-embed-text")
-    try:
-        claim_vectors = embed.embed_documents(claims)  # UPDATED for consistent embedding
-        logger.info("Generated embeddings for claims.")
-    except Exception as e:
-        logger.error(f"Embedding generation failed: {e}")
-        return {"error": "Embedding failed."}
+    claim_vectors = embed.embed_documents(claims)
+    claim_matrix = np.array(claim_vectors).astype("float32")
+    faiss.normalize_L2(claim_matrix)
 
+    index_data = FAISS_CACHE[base_doc_id]
+    index = index_data["index"]
+    sentence_page_map = index_data["sentences"]
+
+    D, I = index.search(claim_matrix, 1)
     results = []
-    for i, vec in enumerate(claim_vectors):
-        query = f"*=>[KNN 3 @embedding $vector AS score]"
-        params_dict = {"vector": np.array(vec, dtype='float32').tobytes()}
 
-        logger.info(f"Running Redis vector query for claim {i} with length {len(vec)}.")
+    for i, claim in enumerate(claims):
+        best_idx = I[i][0]
+        best_score = float(D[i][0])
+        sentence, page = sentence_page_map[best_idx]
+        results.append({
+            "claim": claim,
+            "score": best_score,
+            "status": "supported" if best_score >= 0.7 else "unsupported",
+            "evidence": sentence if best_score >= 0.7 else None,
+            "page": page if best_score >= 0.7 else None
+        })
 
-        try:
-            redis_query = redis_client.ft(SECONDARY_INDEX_NAME).search(
-                redis.commands.search.query.Query(query).dialect(2).sort_by("score").paging(0, 3).return_fields("sentence", "page", "score"),
-                params_dict
-            )
-            logger.info(f"[FactCheck] Retrieved {len(redis_query.docs)} results for claim {i}.")
-
-            best_doc = None
-            best_score = float("inf")
-            for doc in redis_query.docs:
-                logger.info(f"[FactCheck] DocID={doc.id if hasattr(doc, 'id') else 'N/A'}, Score={doc.score}, Sentence={getattr(doc, 'sentence', None)}, Page={getattr(doc, 'page', None)}")
-                score = float(doc.score)
-                if score < best_score:
-                    best_score = score
-                    best_doc = doc
-
-            results.append({
-                "claim": claims[i],
-                "score": best_score,
-                "status": "supported" if best_score <= threshold else "unsupported",
-                "evidence": getattr(best_doc, 'sentence', None) if best_doc and best_score <= threshold else None,
-                "page": int(getattr(best_doc, 'page', 0)) if best_doc and hasattr(best_doc, 'page') else None
-            })
-        except Exception as e:
-            logger.error(f"Redis query failed for claim {i}: {e}")
-            results.append({"claim": claims[i], "error": str(e)})
-
-    logger.info("Completed fact check.")
     return {"fact_check": results}
+
+@app.get("/debug/faiss-status")
+def debug_faiss_status():
+    return {"cached_docs": list(FAISS_CACHE.keys())}
+
+@app.get("/debug/faiss-sentences")
+def debug_faiss_sentences(doc_id: str):
+    if doc_id not in FAISS_CACHE:
+        return {"error": "Not found in FAISS cache."}
+    return {"sentences": FAISS_CACHE[doc_id]["sentences"][:5]}  # preview first 5
 
 
 def index_sentences_for_fact_checking(pages: List[tuple[str, int]], base_doc_id: str):
@@ -811,15 +787,6 @@ def root():
     return {"message": "DocuGroq server running"}
 
 
-@app.post("/fact-check")
-def fact_check(request: FactCheckRequest):
-    return fact_check_answer(request.statement)
-
-
-
-@app.post("/fact-check")
-def fact_check(request: FactCheckRequest):
-    return fact_check_answer(request.statement)
 
 @app.post("/old-fact-check")
 def old_fact_check(request: FactCheckRequest):

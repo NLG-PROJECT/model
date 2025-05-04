@@ -1,7 +1,16 @@
 {
-  "documentId": "doc:56b5c72ddbb04f85a8a41f970a83e10d",
+  "documentId": "doc:e3bfd569ed07492c8c4a3c4d03b5cb49",
   "documentName": "intc-20231230.pdf",
   "askyourpdfdocId": "a9a14190-83f4-4a29-85b0-24084dedc07e",
-  "chat_history": [],
-  "timestamp": "2025-05-04T09:01:59.265878Z"
+  "chat_history": [
+    {
+      "sender": "user",
+      "message": "what are the cyber risks involved?"
+    },
+    {
+      "sender": "bot",
+      "message": "The key cyber risks involved are:\n1. Cybersecurity Threats\n2. Financial Implications\n3. Reputational Damage\n4. Third-Party Risks\n5. Compliance Challenges\n6. Vulnerabilities in Products and Services\n7. Ransomware Threats\n8. Insufficient Awareness and Training"
+    }
+  ],
+  "timestamp": "2025-05-04T10:44:37.182370Z"
 }
