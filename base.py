@@ -118,8 +118,6 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             except Exception as e:
                 log_user_event("embedding", "error", str(e))
 
-        # Sentence indexing background process with logging
-
         async def upload_to_askyourpdf():
             ask_doc_id = None
             log_user_event("askyourpdf_upload", "started")
@@ -138,7 +136,20 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
                 log_user_event("askyourpdf_upload", "error", str(e))
             return ask_doc_id
 
-              # FAISS Sentence Indexing (replaces Redis indexing)
+        async def process_financial_statements():
+            try:
+                log_user_event("financial_statements", "started")
+                from factual import obtain_financial_statements
+                statements = obtain_financial_statements(filepath)
+                # Store the financial statements in the session
+                session_data = json.load(open(USER_SESSION_FILE))
+                session_data["financial_statements"] = statements
+                with open(USER_SESSION_FILE, "w") as f:
+                    json.dump(session_data, f, indent=2)
+                log_user_event("financial_statements", "completed")
+            except Exception as e:
+                log_user_event("financial_statements", "error", str(e))
+
         async def index_with_faiss():
             log_user_event("faiss_indexing", "started")
             sentence_page_map = []
@@ -171,7 +182,6 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
             with open(sentence_map_path, "w") as f:
                 json.dump(sentence_page_map, f, indent=2)
 
-
             log_user_event("faiss_indexing", "completed", f"{len(sentences)} sentences")
 
         metadata_entry = {
@@ -183,12 +193,19 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
         update_files_list(metadata_entry)
         reset_user_session(metadata_entry)
         log_user_event("session_reset", "completed")
+
+        # Create all tasks
         task_embed = asyncio.create_task(embed_and_store())
         task_ask = asyncio.create_task(upload_to_askyourpdf())
         task_index = asyncio.create_task(index_with_faiss())
+        task_financial = asyncio.create_task(process_financial_statements())
 
+        # Wait for AskYourPDF first to get doc_id
         ask_doc_id = await task_ask
-        await asyncio.gather(task_embed, task_index)
+        
+        # Run the rest in parallel
+        await asyncio.gather(task_embed, task_index, task_financial)
+
         if ask_doc_id:
             session_data = json.load(open(USER_SESSION_FILE))
             session_data["askyourpdfdocId"] = ask_doc_id
