@@ -11,21 +11,12 @@ import numpy as np
 import multiprocessing
 import warnings
 from collections import defaultdict
+from utils.constants import PDF_PATH, OCR_OUTPUT_DIR, TARGET_HEADINGS
 
 warnings.filterwarnings("ignore", category=UserWarning, module='pdfminer')
 
 
-# --- Config ---
-PDF_PATH = "sample.pdf"
-OCR_OUTPUT_DIR = "ocr_outputs"
-TARGET_HEADINGS = {
-    "consolidated statements of operations": "income_statement",
-    "consolidated statements of income": "income_statement",
-    "consolidated balance sheets": "balance_sheet",
-    "consolidated statements of cash flows": "cash_flows",
-    "consolidated statements of comprehensive income": "comprehensive_income",
-    "consolidated statements of stockholders' equity": "equity_statement"
-}
+
 
 # ocr_engine = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
 

@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from utils.models import ChatRequest, ChatResponse, FactCheckRequest
-from utils.constants import DOCUMENTS_DIR
+from utils.constants import DOCUMENTS_DIR, OCR_OUTPUT_DIR
 from utils.utilities import log_user_event, clear_user_logs
 from experimental import (
     chat,
@@ -168,4 +168,30 @@ def root():
 @app.post("/old-fact-check")
 def old_fact_check(request: FactCheckRequest):
     # Implementation for old fact check
-    pass 
+    pass
+
+@app.get("/financial-statements")
+async def get_financial_statements() -> Dict[str, Any]:
+    """Get financial statements from the clean_output.json file."""
+    try:
+        log_user_event("financial_statements", "fetch_started")
+        json_path = os.path.join(OCR_OUTPUT_DIR, "clean_output.json")
+        
+        if not os.path.exists(json_path):
+            raise HTTPException(
+                status_code=404,
+                detail="Financial statements not found. Please upload a document first."
+            )
+            
+        with open(json_path, 'r') as f:
+            statements = json.load(f)
+            
+        log_user_event("financial_statements", "fetch_completed")
+        return {
+            "message": "Financial statements retrieved successfully.",
+            "statements": statements
+        }
+        
+    except Exception as e:
+        log_user_event("financial_statements", "fetch_error", str(e))
+        raise HTTPException(status_code=500, detail=str(e)) 

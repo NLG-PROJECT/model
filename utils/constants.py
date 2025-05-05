@@ -23,3 +23,14 @@ DOCUMENTS_DIR = 'documents'
 FILES_LIST_PATH = 'files_list.json'
 USER_LOG_FILE = 'user_logs.jsonl'
 SECONDARY_INDEX_NAME = "sentences_idx" 
+
+PDF_PATH = "sample.pdf"
+OCR_OUTPUT_DIR = "ocr_outputs"
+TARGET_HEADINGS = {
+    "consolidated statements of operations": "income_statement",
+    "consolidated statements of income": "income_statement",
+    "consolidated balance sheets": "balance_sheet",
+    "consolidated statements of cash flows": "cash_flows",
+    "consolidated statements of comprehensive income": "comprehensive_income",
+    "consolidated statements of stockholders' equity": "equity_statement"
+}
