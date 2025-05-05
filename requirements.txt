@@ -1,17 +1,16 @@
-fastapi>=0.95.0
-uvicorn
-python-multipart
+PyMuPDF
+pdfplumber
+camelot-py
+pandas
+paddleocr
+pdf2image
+numpy
+fastapi
 PyPDF2
 python-docx
 requests
 langchain-ollama
-beautifulsoup4
 python-dotenv
-pydantic
-groq
-numpy
 redis
-typing-extensions
-# phi-agent
-httpx
-openai>=1.0.0
+nltk
+faiss-cpu 
