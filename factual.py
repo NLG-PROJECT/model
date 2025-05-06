@@ -12,6 +12,7 @@ import multiprocessing
 import warnings
 from collections import defaultdict
 from utils.constants import PDF_PATH, OCR_OUTPUT_DIR, TARGET_HEADINGS
+import asyncio
 
 warnings.filterwarnings("ignore", category=UserWarning, module='pdfminer')
 
@@ -48,7 +49,7 @@ def is_valid_table(df: pd.DataFrame) -> bool:
     return True
 
 # --- Step 1: Locate Matching Pages ---
-def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # adjusted threshold
+def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # removed async
     doc = fitz.open(pdf_path)
     matched_pages = []
 
@@ -89,7 +90,7 @@ def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # adjusted
     return matched_pages
 
 # --- Step 2: Structured Table Extraction (Camelot First, fallback to pdfplumber) ---
-def extract_table(pdf_path, page_num):
+async def extract_table(pdf_path, page_num):
     try:
         tables = camelot.read_pdf(pdf_path, pages=str(page_num + 1), flavor='stream')
         print(f"Camelot tables {tables}")
@@ -158,17 +159,16 @@ def extract_table(pdf_path, page_num):
 #         print(f"OCR found no valid rows on page {page_number+1}")
 
 # --- Step 4: Process Pages ---
-def process_label_group(args):
+async def process_label_group(args):
     label, pages, pdf_path = args
     combined_df = pd.DataFrame()
 
     for pg in pages:
         print(f"\nProcessing page {pg+1} ({label}):")
-        df = extract_table(pdf_path, pg)
+        df = await extract_table(pdf_path, pg)  # Make sure to await this
 
         if df.empty or df.shape[0] <= 3:
             print(f"Skipping page {pg+1} due to empty or invalid table")
-            # fallback_ocr(pdf_path, pg, label)
         else:
             combined_df = pd.concat([combined_df, df], ignore_index=True)
 
@@ -182,7 +182,7 @@ def process_label_group(args):
 # --- Postprocess to JSON ---
 # --- Custom Handler: Income Statement JSON ---
 # --- Custom Handler: Income Statement JSON ---
-def process_income_statement_to_json(csv_path):
+async def process_income_statement_to_json(csv_path):
     json_path = os.path.join(OCR_OUTPUT_DIR, "income_statement_clean.json")
 
     if os.path.exists(json_path):
@@ -249,7 +249,7 @@ def process_income_statement_to_json(csv_path):
 
 
 # --- Custom Handler: Comprehensive Income JSON ---
-def process_comprehensive_income_to_json(csv_path):
+async def process_comprehensive_income_to_json(csv_path):
     try:
         with open(os.path.join(OCR_OUTPUT_DIR, "income_statement_clean.json")) as f:
             data = json.load(f)
@@ -311,7 +311,7 @@ def process_comprehensive_income_to_json(csv_path):
 
 
 # --- Custom Handler: Cash Flow JSON ---
-def process_cashflow_to_json(csv_path):
+async def process_cashflow_to_json(csv_path):
     json_path = os.path.join(OCR_OUTPUT_DIR, "cashflow_statement_clean.json")
     data = {}
 
@@ -454,7 +454,7 @@ def process_balance_sheet_to_json(csv_path):
 
     print(f"Balance sheet JSON saved to {json_path}")
 
-def process_equity_statement_to_json(csv_path):
+async def process_equity_statement_to_json(csv_path):
     df = pd.read_csv(csv_path, header=None)
     if df.empty:
         print(f"Equity CSV at {csv_path} is empty.")
@@ -632,25 +632,32 @@ def postprocess_tables_to_json():
 
 
 # --- Main Pipeline ---
-def obtain_financial_statements(pdf_path: str):
-    if os.path.exists(OCR_OUTPUT_DIR):
-        for f in os.listdir(OCR_OUTPUT_DIR):
-            os.remove(os.path.join(OCR_OUTPUT_DIR, f))
-    else:
-        os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
+async def obtain_financial_statements(pdf_path: str):
+    try:
+        # First locate the pages (this is now synchronous)
+        pages = locate_financial_pages(pdf_path)
+        if not pages:
+            print("No financial statement pages found")
+            return {}
 
-    matched_pages = locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8)
-    groups = defaultdict(list)
-    for m in matched_pages:
-        groups[m['label']].append(m['page_number'])
+        # Group pages by label
+        label_groups = defaultdict(list)
+        for page in pages:
+            label_groups[page["label"]].append(page["page_number"])
 
-    tasks = [(label, pages, pdf_path) for label, pages in groups.items()]
-    os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)  # Ensure output directory exists
+        # Process each label group
+        tasks = []
+        for label, page_numbers in label_groups.items():
+            tasks.append(process_label_group((label, page_numbers, pdf_path)))
 
-    with multiprocessing.Pool(len(tasks)) as pool:
-        pool.map(process_label_group, tasks)
+        # Wait for all processing to complete
+        await asyncio.gather(*tasks)
 
-    postprocess_tables_to_json()
+        # Postprocess to JSON
+        return postprocess_tables_to_json()
+    except Exception as e:
+        print(f"Error in obtain_financial_statements: {str(e)}")
+        return {}
 
 if __name__ == "__main__":
-    obtain_financial_statements(PDF_PATH)
+    asyncio.run(obtain_financial_statements(PDF_PATH))

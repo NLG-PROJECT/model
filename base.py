@@ -31,6 +31,8 @@ from utils.constants import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_INDEX_
 from utils.models import ChatRequest, ChatResponse
 from prompt_engineering import ASK_YOUR_SUMMARY_PROMPT, ASK_RISK_FACTORS_SUMMARY_PROMPT
 from utils.utilities import update_files_list, reset_user_session, clear_user_logs
+import aiofiles
+import aiohttp
 
 # Caches FAISS index to user session for fact checking
 FAISS_CACHE = {}
@@ -81,77 +83,167 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 
 
 async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
-    logger.info(f"Uploading {len(files)} files...")
-    clear_user_logs()
-    log_user_event("upload_batch", "start", f"{len(files)} files")
+    try:
+        # Clear logs first, before anything else
+        logger.info("Starting upload process - clearing logs first")
+        await clear_user_logs()
+        logger.info("Logs cleared successfully")
+        
+        # Start batch logging
+        await log_user_event("upload_batch", "start", f"{len(files)} files")
+        logger.info(f"Starting upload of {len(files)} files...")
 
-    async def process_file(file: UploadFile):
-        log_user_event("upload_start", "started", file.filename)
-
-        file_bytes = await file.read()
-        ext = file.filename.split(".")[-1]
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        filepath = os.path.join(DOCUMENTS_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(file_bytes)
-
-        base_doc_id = f"doc:{uuid.uuid4().hex}"
-
-        log_user_event("extract_text", "started", file.filename)
-        content = extract_text_from_file(filepath)
-        chunks = chunk_text(content)
-        print(chunks, "chunks")
-        log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
-
-        # ✅ Save raw content for fact checking
-        raw_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_raw.txt")
-        with open(raw_path, "w", encoding="utf-8") as rf:
-            for text, page in content:
-                rf.write(f"[PAGE {page}]\n{text}\n\n")
-
-        async def embed_and_store():
+        async def process_file(file: UploadFile):
             try:
-                log_user_event("embedding", "started")
-                embeddings = embed_text_chunks(chunks)
-                add_embeddings_to_redis(embeddings, chunks, base_doc_id, file.filename)
-                log_user_event("embedding", "completed")
-            except Exception as e:
-                log_user_event("embedding", "error", str(e))
+                await log_user_event("upload_start", "started", file.filename)
+                logger.info(f"Processing file: {file.filename}")
 
-        async def upload_to_askyourpdf():
+                # Group 1: File saving and initial processing
+                file_bytes = await file.read()
+                ext = file.filename.split(".")[-1]
+                filename = f"{uuid.uuid4().hex}.{ext}"
+                filepath = os.path.join(DOCUMENTS_DIR, filename)
+                
+                logger.info(f"Saving file to: {filepath}")
+                async with aiofiles.open(filepath, "wb") as f:
+                    await f.write(file_bytes)
+
+                base_doc_id = f"doc:{uuid.uuid4().hex}"
+                logger.info(f"Generated doc_id: {base_doc_id}")
+
+                await log_user_event("extract_text", "started", file.filename)
+                logger.info("Starting text extraction...")
+                content = await extract_text_from_file(filepath)
+                chunks = chunk_text(content)  # This can stay sync as it's pure computation
+                logger.info(f"Extracted {len(chunks)} chunks")
+                await log_user_event("extract_text", "completed", f"{len(chunks)} chunks")
+
+                # Save raw content for fact checking
+                raw_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_raw.txt")
+                logger.info(f"Saving raw content to: {raw_path}")
+                async with aiofiles.open(raw_path, "w", encoding="utf-8") as rf:
+                    for text, page in content:
+                        await rf.write(f"[PAGE {page}]\n{text}\n\n")
+
+                # Initialize metadata and reset session
+                metadata_entry = {
+                    "documentId": base_doc_id,
+                    "documentName": file.filename,
+                    "askyourpdfdocId": None
+                }
+
+                logger.info("Updating files list and resetting session...")
+                await update_files_list(metadata_entry)
+                await reset_user_session(metadata_entry)
+                await log_user_event("session_reset", "completed")
+                logger.info("Session reset completed")
+
+                # Create all tasks
+                logger.info("Creating parallel tasks...")
+                tasks = [
+                    embed_and_store(chunks, base_doc_id, file.filename),
+                    index_with_faiss(content, base_doc_id),
+                    process_financial_statements(filepath),
+                    upload_to_askyourpdf(file_bytes, file.filename, file.content_type)
+                ]
+
+                # Wait for all tasks to complete
+                logger.info("Waiting for all tasks to complete...")
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Get ask_doc_id from the last result (upload_to_askyourpdf)
+                ask_doc_id = results[-1] if not isinstance(results[-1], Exception) else None
+                logger.info(f"AskYourPDF upload completed with doc_id: {ask_doc_id}")
+
+                if ask_doc_id:
+                    logger.info("Updating session with AskYourPDF doc_id...")
+                    async with aiofiles.open(USER_SESSION_FILE, "r") as f:
+                        session_data = json.loads(await f.read())
+                    session_data["askyourpdfdocId"] = ask_doc_id
+                    async with aiofiles.open(USER_SESSION_FILE, "w") as f:
+                        await f.write(json.dumps(session_data, indent=2))
+                    logger.info("Session updated with AskYourPDF doc_id")
+
+                # Check for any exceptions in the results
+                for i, result in enumerate(results[:-1]):  # Skip the last result (ask_doc_id)
+                    if isinstance(result, Exception):
+                        logger.error(f"Task {i} failed with error: {str(result)}")
+                        raise result
+
+                return {"message": "File processed successfully.", "documentId": base_doc_id}
+            except Exception as e:
+                logger.error(f"Error processing file {file.filename}: {str(e)}")
+                await log_user_event("file_processing", "error", str(e))
+                raise
+
+        async def upload_to_askyourpdf(file_bytes, filename, content_type):
             ask_doc_id = None
-            log_user_event("askyourpdf_upload", "started")
+            await log_user_event("askyourpdf_upload", "started")
             try:
-                response = requests.post(
-                    f"{ASKYOURPDF_BASE_URL}/api/upload",
-                    headers={"x-api-key": ASKYOURPDF_API_KEY},
-                    files={"file": (file.filename, file_bytes, file.content_type)}
-                )
-                if response.status_code == 201:
-                    ask_doc_id = response.json().get("docId")
-                    log_user_event("askyourpdf_upload", "completed", ask_doc_id)
-                else:
-                    log_user_event("askyourpdf_upload", "failed", response.text)
+                async with aiohttp.ClientSession() as session:
+                    # Create a proper multipart form data
+                    data = aiohttp.FormData()
+                    data.add_field('file',
+                                 file_bytes,
+                                 filename=filename,
+                                 content_type=content_type)
+                    
+                    async with session.post(
+                        f"{ASKYOURPDF_BASE_URL}/api/upload",
+                        headers={"x-api-key": ASKYOURPDF_API_KEY},
+                        data=data
+                    ) as response:
+                        if response.status == 201:
+                            result = await response.json()
+                            ask_doc_id = result.get("docId")
+                            await log_user_event("askyourpdf_upload", "completed", ask_doc_id)
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"AskYourPDF upload failed: {error_text}")
+                            await log_user_event("askyourpdf_upload", "failed", error_text)
             except Exception as e:
-                log_user_event("askyourpdf_upload", "error", str(e))
+                logger.error(f"Error in AskYourPDF upload: {str(e)}")
+                await log_user_event("askyourpdf_upload", "error", str(e))
             return ask_doc_id
 
-        async def process_financial_statements():
+        async def embed_and_store(chunks, base_doc_id, filename):
             try:
-                log_user_event("financial_statements", "started")
-                from factual import obtain_financial_statements
-                statements = obtain_financial_statements(filepath)
-                # Store the financial statements in the session
-                session_data = json.load(open(USER_SESSION_FILE))
-                session_data["financial_statements"] = statements
-                with open(USER_SESSION_FILE, "w") as f:
-                    json.dump(session_data, f, indent=2)
-                log_user_event("financial_statements", "completed")
+                await log_user_event("embedding", "started")
+                embeddings = await embed_text_chunks(chunks)
+                await add_embeddings_to_redis(embeddings, chunks, base_doc_id, filename)
+                await log_user_event("embedding", "completed")
             except Exception as e:
-                log_user_event("financial_statements", "error", str(e))
+                await log_user_event("embedding", "error", str(e))
 
-        async def index_with_faiss():
-            log_user_event("faiss_indexing", "started")
+        async def process_financial_statements(filepath):
+            try:
+                await log_user_event("financial_statements", "started")
+                from factual import obtain_financial_statements, locate_financial_pages
+                
+                # First locate the pages and await the result
+                pages = await locate_financial_pages(filepath)
+                logger.info(f"Located financial pages: {pages}")
+                
+                # Then get the statements and await the result
+                statements = await obtain_financial_statements(filepath)
+                logger.info("Obtained financial statements")
+                
+                # Update session with the statements
+                async with aiofiles.open(USER_SESSION_FILE, "r") as f:
+                    session_data = json.loads(await f.read())
+                session_data["financial_statements"] = statements
+                async with aiofiles.open(USER_SESSION_FILE, "w") as f:
+                    await f.write(json.dumps(session_data, indent=2))
+                
+                await log_user_event("financial_statements", "completed")
+                return statements  # Return the statements for potential use
+            except Exception as e:
+                logger.error(f"Error in process_financial_statements: {str(e)}")
+                await log_user_event("financial_statements", "error", str(e))
+                raise
+
+        async def index_with_faiss(content, base_doc_id):
+            await log_user_event("faiss_indexing", "started")
             sentence_page_map = []
             for text, page in content:
                 for sentence in punkt_tokenizer.tokenize(text):
@@ -162,7 +254,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 
             sentences = [s for s, _ in sentence_page_map]
             embed = OllamaEmbeddings(model="nomic-embed-text")
-            vectors = embed.embed_documents(sentences)
+            vectors = await embed.embed_documents(sentences)
             matrix = np.array(vectors).astype("float32")
             faiss.normalize_L2(matrix)
             index = faiss.IndexFlatIP(len(matrix[0]))
@@ -179,43 +271,20 @@ async def upload_files(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
 
             # Save sentence map for fallback
             sentence_map_path = os.path.join(DOCUMENTS_DIR, f"{base_doc_id}_sentences.json")
-            with open(sentence_map_path, "w") as f:
-                json.dump(sentence_page_map, f, indent=2)
+            async with aiofiles.open(sentence_map_path, "w") as f:
+                await f.write(json.dumps(sentence_page_map, indent=2))
 
-            log_user_event("faiss_indexing", "completed", f"{len(sentences)} sentences")
+            await log_user_event("faiss_indexing", "completed", f"{len(sentences)} sentences")
 
-        metadata_entry = {
-            "documentId": base_doc_id,
-            "documentName": file.filename,
-            "askyourpdfdocId": None
-        }
-
-        update_files_list(metadata_entry)
-        reset_user_session(metadata_entry)
-        log_user_event("session_reset", "completed")
-
-        # Create all tasks
-        task_embed = asyncio.create_task(embed_and_store())
-        task_ask = asyncio.create_task(upload_to_askyourpdf())
-        task_index = asyncio.create_task(index_with_faiss())
-        task_financial = asyncio.create_task(process_financial_statements())
-
-        # Wait for AskYourPDF first to get doc_id
-        ask_doc_id = await task_ask
-        
-        # Run the rest in parallel
-        await asyncio.gather(task_embed, task_index, task_financial)
-
-        if ask_doc_id:
-            session_data = json.load(open(USER_SESSION_FILE))
-            session_data["askyourpdfdocId"] = ask_doc_id
-            with open(USER_SESSION_FILE, "w") as f:
-                json.dump(session_data, f, indent=2)
-
-        return {"message": "File processed successfully.", "documentId": base_doc_id}
-
-    results = await asyncio.gather(*[process_file(file) for file in files])
-    return {"message": f"Processed {len(results)} files.", "results": results}
+        # Process all files in parallel
+        logger.info("Starting parallel file processing...")
+        results = await asyncio.gather(*[process_file(file) for file in files])
+        logger.info(f"Successfully processed {len(results)} files")
+        return {"message": f"Processed {len(results)} files.", "results": results}
+    except Exception as e:
+        logger.error(f"Error in upload_files: {str(e)}")
+        await log_user_event("upload_batch", "error", str(e))
+        raise
 
 
 

@@ -13,4 +13,6 @@ langchain-ollama
 python-dotenv
 redis
 nltk
-faiss-cpu 
+faiss-cpu
+aiofiles
+aiohttp 

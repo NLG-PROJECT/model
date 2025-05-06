@@ -6,12 +6,11 @@ Your goal is to generate a summary with the following sections (if available):
 2. Competitive Landscape  
 3. Customer Segments  
 4. Revenue Breakdown  
-5. Risks and Challenges  
-6. Geographic Exposure  
-7. Macroeconomic Sensitivity  
-8. Innovation and R&D  
-9. Strategic Initiatives  
-10. ESG and Legal Disclosures
+5. Geographic Exposure  
+6. Macroeconomic Sensitivity  
+7. Innovation and R&D  
+8. Strategic Initiatives  
+9. ESG and Legal Disclosures
 
 Follow this format:
 - Use markdown-style headers (###) for each section.

@@ -46,7 +46,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 # Redis setup
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=False)
 
-def base_fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
+async def base_fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, Any]:
     """Base fact check answer function."""
     from nltk.tokenize import PunktSentenceTokenizer
     if not os.path.exists(USER_SESSION_FILE):
@@ -105,7 +105,7 @@ def base_fact_check_answer(statement: str, threshold: float = 0.7) -> Dict[str, 
 
     return {"fact_check": results}
 
-def fact_check(request: FactCheckRequest):
+async def fact_check(request: FactCheckRequest):
     """Fact check function."""
     import logging
     logger = logging.getLogger("FactCheck")

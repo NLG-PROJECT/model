@@ -54,7 +54,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 # Redis setup
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=False)
 
-def extract_text_from_file(filepath: str) -> List[tuple[str, int]]:
+async def extract_text_from_file(filepath: str) -> List[tuple[str, int]]:
     """Extract text from file."""
     if filepath.endswith(".pdf"):
         reader = PdfReader(filepath)
@@ -75,13 +75,13 @@ def chunk_text(pages: list[tuple[str, int]], chunk_size: int = 500, overlap: int
                 chunks.append((chunk, page))
     return chunks
 
-def embed_text_chunks(text_chunks: list[tuple[str, int]]) -> List[np.ndarray]:
+async def embed_text_chunks(text_chunks: list[tuple[str, int]]) -> List[np.ndarray]:
     """Embed text chunks using Ollama."""
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
     texts_only = [chunk for chunk, _ in text_chunks]
     return [np.array(e).astype('float32') for e in embeddings.embed_documents(texts_only)]
 
-def add_embeddings_to_redis(embeddings: list[np.ndarray], chunks: List[tuple[str, int]], base_doc_id: str, source: str):
+async def add_embeddings_to_redis(embeddings: list[np.ndarray], chunks: List[tuple[str, int]], base_doc_id: str, source: str):
     """Add embeddings to Redis."""
     for i, ((chunk, page), embedding) in enumerate(zip(chunks, embeddings)):
         doc_id = f"{base_doc_id}:chunk:{i}"
@@ -96,7 +96,7 @@ def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     """Calculate cosine similarity between two vectors."""
     return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
-def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
+async def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
     """Retrieve similar chunks from Redis."""
     try:
         embeddings = OllamaEmbeddings(model="nomic-embed-text")
@@ -125,7 +125,7 @@ def retrieve_similar_chunks(prompt: str, top_k: int = 5) -> List[str]:
         log_user_event("redis_search", "error", str(e))
         return []
 
-def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
+async def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
     """Fallback to AskYourPDF for context."""
     try:
         with open(USER_SESSION_FILE, "r") as f:
@@ -154,7 +154,7 @@ def fallback_askyourpdf_context(prompt: str, base_doc_id: str) -> str:
         log_user_event("askyourpdf_context", "error", str(e))
         return ""
 
-def generate_llm_response(question: str, context: str) -> str:
+async def generate_llm_response(question: str, context: str) -> str:
     """Generate LLM response."""
     try:
         from groq import Groq
@@ -183,7 +183,7 @@ def generate_llm_response(question: str, context: str) -> str:
         log_user_event("groq_response", "error", str(e))
         return ""
 
-def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest) -> ChatResponse:
     """Chat function."""
     try:
         log_user_event("chat", "started", request.message)
@@ -213,7 +213,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         log_user_event("chat", "error", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-def get_market_summary():
+async def get_market_summary():
     """Get market summary."""
     try:
         with open(USER_SESSION_FILE, "r") as f:
@@ -226,7 +226,7 @@ def get_market_summary():
         log_user_event("market_summary", "error", f"Cache check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def get_risk_factors():
+async def get_risk_factors():
     """Get risk factors."""
     try:
         with open(USER_SESSION_FILE, "r") as f:
@@ -239,7 +239,7 @@ def get_risk_factors():
         log_user_event("risk_factors", "error", f"Cache check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def generate_market_summary():
+async def generate_market_summary():
     """Generate market summary."""
     try:
         log_user_event("market_summary", "started")
@@ -279,7 +279,7 @@ def generate_market_summary():
         log_user_event("market_summary", "error", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-def generate_risk_factors():
+async def generate_risk_factors():
     """Generate risk factors."""
     try:
         log_user_event("risk_factors", "started")
