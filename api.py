@@ -21,7 +21,6 @@ from experimental import (
 )
 from base import upload_files
 from fact_checking import fact_check
-from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment
 env_path = Path('.') / '.env'
@@ -29,44 +28,21 @@ load_dotenv(dotenv_path=env_path)
 
 app = FastAPI()
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # You can restrict this to your frontend origin
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 # Logger setup
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 
 # Models
 
 
 # API Endpoints
 @app.post("/upload/files")
-async def upload_files_endpoint(files: List[UploadFile] = File(...)):
+async def upload_files_endpoint(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
+    """Upload files endpoint."""
     try:
-        logger.info("Received file upload request")
-        # Log the files we received
-        for file in files:
-            logger.info(f"Received file: {file.filename}, content_type: {file.content_type}")
-        
-        # Clear logs first
-        logger.info("Clearing user logs...")
-        await clear_user_logs()
-        logger.info("User logs cleared successfully")
-        
-        # Process files
         return await upload_files(files)
     except Exception as e:
-        logger.error(f"Error in upload_files endpoint: {str(e)}")
-        await log_user_event("upload_files", "error", str(e))
+        log_user_event("upload_files", "error", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
