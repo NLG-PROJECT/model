@@ -21,13 +21,21 @@ from experimental import (
 )
 from base import upload_files
 from fact_checking import fact_check
-
+from fastapi.middleware.cors import CORSMiddleware
 # Load environment
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
 
 app = FastAPI()
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can restrict this to your frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Logger setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
