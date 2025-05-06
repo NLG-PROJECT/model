@@ -48,7 +48,7 @@ def is_valid_table(df: pd.DataFrame) -> bool:
     return True
 
 # --- Step 1: Locate Matching Pages ---
-async def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # adjusted threshold
+def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # adjusted threshold
     doc = fitz.open(pdf_path)
     matched_pages = []
 
@@ -89,7 +89,7 @@ async def locate_financial_pages(pdf_path, font_size_threshold_ratio=0.8):  # ad
     return matched_pages
 
 # --- Step 2: Structured Table Extraction (Camelot First, fallback to pdfplumber) ---
-async def extract_table(pdf_path, page_num):
+def extract_table(pdf_path, page_num):
     try:
         tables = camelot.read_pdf(pdf_path, pages=str(page_num + 1), flavor='stream')
         print(f"Camelot tables {tables}")
@@ -158,7 +158,7 @@ async def extract_table(pdf_path, page_num):
 #         print(f"OCR found no valid rows on page {page_number+1}")
 
 # --- Step 4: Process Pages ---
-async def process_label_group(args):
+def process_label_group(args):
     label, pages, pdf_path = args
     combined_df = pd.DataFrame()
 
@@ -182,7 +182,7 @@ async def process_label_group(args):
 # --- Postprocess to JSON ---
 # --- Custom Handler: Income Statement JSON ---
 # --- Custom Handler: Income Statement JSON ---
-async def process_income_statement_to_json(csv_path):
+def process_income_statement_to_json(csv_path):
     json_path = os.path.join(OCR_OUTPUT_DIR, "income_statement_clean.json")
 
     if os.path.exists(json_path):
@@ -249,7 +249,7 @@ async def process_income_statement_to_json(csv_path):
 
 
 # --- Custom Handler: Comprehensive Income JSON ---
-async def process_comprehensive_income_to_json(csv_path):
+def process_comprehensive_income_to_json(csv_path):
     try:
         with open(os.path.join(OCR_OUTPUT_DIR, "income_statement_clean.json")) as f:
             data = json.load(f)
@@ -311,7 +311,7 @@ async def process_comprehensive_income_to_json(csv_path):
 
 
 # --- Custom Handler: Cash Flow JSON ---
-async def process_cashflow_to_json(csv_path):
+def process_cashflow_to_json(csv_path):
     json_path = os.path.join(OCR_OUTPUT_DIR, "cashflow_statement_clean.json")
     data = {}
 
@@ -454,7 +454,7 @@ def process_balance_sheet_to_json(csv_path):
 
     print(f"Balance sheet JSON saved to {json_path}")
 
-async def process_equity_statement_to_json(csv_path):
+def process_equity_statement_to_json(csv_path):
     df = pd.read_csv(csv_path, header=None)
     if df.empty:
         print(f"Equity CSV at {csv_path} is empty.")
