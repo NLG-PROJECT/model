@@ -22,6 +22,15 @@ from experimental import (
 from base import upload_files
 from fact_checking import fact_check
 from fastapi.middleware.cors import CORSMiddleware
+import math
+from fastapi.responses import JSONResponse
+import httpx
+import os
+import math
+
+
+ARRIA_ENDPOINT = "https://app.studio.arria.com:443/alite_content_generation_webapp/text/g87a2Mx7Erq"
+ARRIA_AUTH_KEY = os.getenv("ARRIA_BEARER_TOKEN")  
 # Load environment
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -205,9 +214,20 @@ async def get_financial_statements() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e)) 
 
 
+
+def sanitize_floats(obj):
+    if isinstance(obj, dict):
+        return {k: sanitize_floats(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_floats(v) for v in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    return obj
+
 @app.get("/executive-summary")
 async def get_executive_summary() -> Any:
-    """Fetch executive summary: raw financial statements data without wrapping."""
+    """Fetch and send executive summary to Arria endpoint."""
     try:
         log_user_event("executive_summary", "fetch_started")
         json_path = os.path.join(OCR_OUTPUT_DIR, "clean_output.json")
@@ -221,8 +241,43 @@ async def get_executive_summary() -> Any:
         with open(json_path, 'r') as f:
             statements = json.load(f)
 
-        log_user_event("executive_summary", "fetch_completed")
-        return statements  # <-- Return raw statements directly
+        # Sanitize for JSON compliance
+        statements = sanitize_floats(statements)
+
+        payload = {
+            "data": [
+                {
+                    "id": "Primary",
+                    "type": "json",
+                    "jsonData": statements
+                }
+            ],
+            "options": {
+                "nullValueBehaviour": "SHOW_IDENTIFIER",
+                "contentOutputFormat": "HTML"
+            }
+        }
+
+        headers = {
+            "Authorization": f"Bearer {ARRIA_AUTH_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                ARRIA_ENDPOINT,
+                json=payload,
+                headers=headers
+            )
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Arria request failed: {response.text}"
+            )
+
+        log_user_event("executive_summary", "fetch_and_post_success")
+        return response.json()
 
     except Exception as e:
         log_user_event("executive_summary", "fetch_error", str(e))
