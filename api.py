@@ -203,3 +203,27 @@ async def get_financial_statements() -> Dict[str, Any]:
     except Exception as e:
         log_user_event("financial_statements", "fetch_error", str(e))
         raise HTTPException(status_code=500, detail=str(e)) 
+
+
+@app.get("/executive-summary")
+async def get_executive_summary() -> Any:
+    """Fetch executive summary: raw financial statements data without wrapping."""
+    try:
+        log_user_event("executive_summary", "fetch_started")
+        json_path = os.path.join(OCR_OUTPUT_DIR, "clean_output.json")
+
+        if not os.path.exists(json_path):
+            raise HTTPException(
+                status_code=404,
+                detail="Executive summary not found. Please upload a document first."
+            )
+
+        with open(json_path, 'r') as f:
+            statements = json.load(f)
+
+        log_user_event("executive_summary", "fetch_completed")
+        return statements  # <-- Return raw statements directly
+
+    except Exception as e:
+        log_user_event("executive_summary", "fetch_error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
